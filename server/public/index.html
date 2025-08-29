@@ -3,46 +3,150 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>موقع شحن الألعاب — نسخة متكاملة</title>
+  <title>موقع شحن الألعاب — نسخة مصححة</title>
   <style>
-    /* (نسخ نفس CSS الذي أرسلته سابقاً مع تعديلات طفيفة) */
-    * { margin:0; padding:0; box-sizing:border-box }
-    body { font-family:Arial,Helvetica,sans-serif; background:#000; color:#fff; overflow-x:hidden }
-    header { background:#111; padding:10px 20px; position:relative; text-align:center }
-    header img { height:90px; width:auto; display:block; margin:0 auto }
-    #ordersStatusBar { margin:8px auto 0; max-width:720px; padding:4px 8px; border-radius:6px; text-align:center; min-height:22px; display:none; overflow:hidden; white-space:normal; pointer-events:none }
-    .status-line { color:#FFCB01; padding:2px 4px; margin:2px 0; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; font-weight:700; border-bottom:1px solid rgba(255,203,1,0.06); line-height:1.1 }
-    .status-line:last-child { border-bottom:none }
-    .menu { position:absolute; right:20px; font-size:28px; cursor:pointer; color:#FFCB01; top:50%; transform:translateY(-50%) }
-    #personalNumberDisplay { position:absolute; left:20px; top:50%; transform:translateY(-50%); color:#FFCB01; font-weight:bold; font-size:13px }
-    #notifBell { position:absolute; right:68px; top:50%; transform:translateY(-50%); font-size:22px; cursor:pointer; color:#FFCB01 }
-    #notifBell .badge { background:#ff3b30; color:#fff; border-radius:999px; padding:2px 6px; font-size:12px; margin-left:6px; vertical-align:middle }
-    .notif-panel { position:fixed; top:70px; right:20px; width:360px; max-width:92%; background:#111; border:2px solid #FFCB01; border-radius:10px; padding:10px; z-index:1500; box-shadow:0 6px 30px rgba(0,0,0,0.6) }
-    .notif-panel.hidden { display:none }
-    .sidebar { position:fixed; top:0; right:-100%; width:80%; max-width:300px; height:100%; background:#111; padding:20px; transition:0.28s; z-index:1000; overflow-y:auto; border-left:2px solid #222 }
-    .sidebar.active { right:0 }
-    .sidebar .avatar { width:48px; height:48px; border-radius:50%; background:#222; display:flex; align-items:center; justify-content:center; font-size:20px; color:#FFCB01; border:2px solid #FFCB01; }
-    .container { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:15px; padding:20px }
-    .card { background:#111; border:2px solid #FFCB01; border-radius:12px; padding:20px; text-align:center; cursor:pointer; transition:.25s; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center }
-    .card:hover { background:#FFCB01; color:#000 }
-    .hidden { display:none }
-    .form-box { background:#111; border:2px solid #FFCB01; border-radius:12px; padding:20px; margin:20px }
-    select,input,button,textarea { width:100%; padding:10px; margin:10px 0; border-radius:8px; border:none; font-size:16px; background:#222; color:#fff }
-    .button-option { background:#222; color:#FFCB01; border:2px solid #FFCB01; margin:5px 0; padding:10px; border-radius:8px; cursor:pointer; width:100%; text-align:center; font-weight:bold }
-    .button-option.selected { background:#FFCB01; color:#000 }
-    button { background:#FFCB01; color:#000; font-weight:bold; cursor:pointer; border-radius:8px; padding:10px }
-    .small-btn { display:inline-block; padding:8px 12px; border-radius:8px; background:#FFCB01; color:#000; cursor:pointer; margin-top:8px; text-align:center }
-    .back-btn { display:block; margin:20px auto; background:#FFCB01; color:#000; padding:10px; border-radius:8px; text-align:center; font-weight:bold; cursor:pointer }
-    .price-note { color:#FFCB01; font-weight:bold; margin:10px 0; font-size:14px; white-space:pre-line }
-    .orders-list { padding:10px; margin:10px; background:#111; border-radius:10px; border:1px solid #333 }
-    .order-item { padding:12px; border:2px solid #FFCB01; border-radius:8px; margin-bottom:10px; background:#111 }
-    .login-page { max-width:600px; margin:18px auto; padding:16px }
-    .muted-small { font-size:13px; color:#aaa; margin-top:6px }
-    .upload-status { font-size:13px; color:#aaa; margin-top:6px }
-  </style>
+  /* (نسخة محسّنة من CSS مع تنسيقات القائمة الجانبية) */
+  * { margin:0; padding:0; box-sizing:border-box }
+  html,body { height:100% }
+  body { font-family:Arial,Helvetica,sans-serif; background:#000; color:#fff; overflow-x:hidden }
+
+  /* Header */
+  header { background:#111; padding:10px 20px; position:relative; text-align:center }
+  header img { height:90px; width:auto; display:block; margin:0 auto }
+  #ordersStatusBar { margin:8px auto 0; max-width:720px; padding:4px 8px; border-radius:6px; text-align:center; min-height:22px; display:none; overflow:hidden; white-space:normal; pointer-events:none }
+  .status-line { color:#FFCB01; padding:2px 4px; margin:2px 0; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; font-weight:700; border-bottom:1px solid rgba(255,203,1,0.06); line-height:1.1 }
+  .status-line:last-child { border-bottom:none }
+  .menu { position:absolute; right:20px; font-size:28px; cursor:pointer; color:#FFCB01; top:50%; transform:translateY(-50%) }
+  #personalNumberDisplay { position:absolute; left:20px; top:50%; transform:translateY(-50%); color:#FFCB01; font-weight:bold; font-size:13px }
+  #notifBell { position:absolute; right:68px; top:50%; transform:translateY(-50%); font-size:22px; cursor:pointer; color:#FFCB01 }
+  #notifBell .badge { background:#ff3b30; color:#fff; border-radius:999px; padding:2px 6px; font-size:12px; margin-left:6px; vertical-align:middle }
+
+  /* Notif panel */
+  .notif-panel { position:fixed; top:70px; right:20px; width:360px; max-width:92%; background:#111; border:2px solid #FFCB01; border-radius:10px; padding:10px; z-index:1500; box-shadow:0 6px 30px rgba(0,0,0,0.6) }
+  .notif-panel.hidden { display:none }
+  .notif-empty { color:#aaa; padding:8px; text-align:center }
+
+  /* Sidebar (محسّن) */
+  .sidebar {
+    position:fixed;
+    top:0;
+    right:-100%;
+    width:80%;
+    max-width:300px;
+    height:100%;
+    background:transparent; /* شفاف افتراضي حتى يظهر خلفية الهيدر */
+    padding:20px;
+    transition:0.28s;
+    z-index:1000;
+    overflow-y:auto;
+    border-left:2px solid rgba(255,255,255,0.03);
+  }
+  .sidebar.active { right:0; background:rgba(17,17,17,0.98); }
+
+  /* ملف المستخدم (أفاتار) */
+  .sidebar .avatar { width:48px; height:48px; border-radius:50%; background:#222; display:flex; align-items:center; justify-content:center; font-size:20px; color:#FFCB01; border:2px solid #FFCB01; }
+
+  /* روابط القائمة - تظهر كـ نص أبيض تحتي */
+  .sidebar a {
+    display:block;              /* يخليهم تحت بعض */
+    color:#fff !important;      /* نص أبيض */
+    text-decoration:none;       /* يشيل الخط تحت النص */
+    padding:10px 12px;          /* مسافة داخلية */
+    margin:6px 0;               /* فصل بين العناصر */
+    font-size:16px;
+    font-weight:700;
+    text-align:right;           /* محاذاة يمين (للعربية) */
+    border-radius:6px;
+    transition: color 0.15s, background 0.15s;
+    background: transparent;    /* بدون خلفية */
+  }
+  /* تفاعل عند المرور - يغيّر اللون فقط */
+  .sidebar a:hover {
+    color:#FFCB01;
+    background:rgba(255,203,1,0.04); /* طفيف لمساحة تمرير */
+  }
+
+  /* روابط ثانوية أو أزرار صغيرة داخل الشريط الجانبي */
+  .sidebar .small-btn {
+    display:block;
+    width:100%;
+    text-align:center;
+    background:transparent;
+    color:#fff;
+    border:2px solid rgba(255,255,255,0.05);
+    padding:10px;
+    border-radius:8px;
+    margin-top:12px;
+    cursor:pointer;
+  }
+  .sidebar .small-btn:hover { border-color:rgba(255,203,1,0.35); color:#FFCB01; }
+
+  /* محتوى الصفحة */
+  .container { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:15px; padding:20px }
+  .card { background:#111; border:2px solid #FFCB01; border-radius:12px; padding:20px; text-align:center; cursor:pointer; transition:.25s; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center }
+  .card:hover { background:#FFCB01; color:#000 }
+  .hidden { display:none }
+  .form-box { background:#111; border:2px solid #FFCB01; border-radius:12px; padding:20px; margin:20px }
+  select,input,button,textarea { width:100%; padding:10px; margin:10px 0; border-radius:8px; border:none; font-size:16px; background:#222; color:#fff }
+  .button-option { background:#222; color:#FFCB01; border:2px solid #FFCB01; margin:5px 0; padding:10px; border-radius:8px; cursor:pointer; width:100%; text-align:center; font-weight:bold }
+  .button-option.selected { background:#FFCB01; color:#000 }
+  button { background:#FFCB01; color:#000; font-weight:bold; cursor:pointer; border-radius:8px; padding:10px }
+  .small-btn { display:inline-block; padding:8px 12px; border-radius:8px; background:#FFCB01; color:#000; cursor:pointer; margin-top:8px; text-align:center }
+  .back-btn { display:block; margin:20px auto; background:#FFCB01; color:#000; padding:10px; border-radius:8px; text-align:center; font-weight:bold; cursor:pointer }
+  .price-note { color:#FFCB01; font-weight:bold; margin:10px 0; font-size:14px; white-space:pre-line }
+  .orders-list { padding:10px; margin:10px; background:#111; border-radius:10px; border:1px solid #333 }
+  .order-item { padding:12px; border:2px solid #FFCB01; border-radius:8px; margin-bottom:10px; background:#111 }
+  .login-page { max-width:600px; margin:18px auto; padding:16px }
+  .muted-small { font-size:13px; color:#aaa; margin-top:6px }
+  .upload-status { font-size:13px; color:#aaa; margin-top:6px }
+
+  /* responsive tweaks */
+  @media (min-width: 900px) {
+    .sidebar { right:0; position:static; width:260px; max-width:none; background:transparent; border-left:none; padding:20px 10px 20px 20px; }
+    .sidebar.active { right:0; background:transparent; }
+    main { margin-right:260px; } /* space for sidebar on wide screens */
+  }
+
+  @media (max-width: 899px) {
+    .menu { display:block }
+    header img { height:72px }
+  }
+</style>
 </head>
 <body>
-  <header>
+    <!-- صفحة تسجيل الدخول -->
+<div id="loginPage" class="form-box hidden">
+  <h2>تسجيل الدخول</h2>
+  <form id="loginForm">
+    <input type="text" id="loginPersonal" placeholder="الرقم الشخصي">
+    <input type="password" id="loginPassword" placeholder="كلمة المرور">
+    <button type="submit">دخول</button>
+  </form>
+  <p class="muted-small">ليس لديك حساب؟ <a href="#" onclick="showRegister()">إنشاء حساب</a></p>
+</div>
+
+<!-- صفحة إنشاء حساب -->
+<div id="registerPage" class="form-box hidden">
+  <h2>إنشاء حساب جديد</h2>
+  <form id="registerForm">
+    <input type="text" id="regName" placeholder="الاسم الكامل">
+    <input type="email" id="regEmail" placeholder="البريد الإلكتروني">
+    <input type="text" id="regPhone" placeholder="رقم الهاتف">
+    <input type="text" id="regPersonal" placeholder="الرقم الشخصي">
+    <input type="password" id="regPassword" placeholder="كلمة المرور">
+    <button type="submit">تسجيل</button>
+
+    <!-- ✅ الملاحظة هنا أسفل الزر -->
+    <p class="muted-small" style="margin-top:10px;">
+      ملاحظة: لن يتم ارسال اي كود على البريد الإلكتروني او رقم الهاتف.<br>
+      فقط قم بتعبئة بياناتك الاصلية ففي حال حدوث مشكلة نستطيع التواصل معك.
+    </p>
+  </form>
+
+  <p class="muted-small">لديك حساب؟ <a href="#" onclick="showLogin()">تسجيل الدخول</a></p>
+</div>
+
+<header>
     <img src="https://i.postimg.cc/W1Ysr3QG/image.png" alt="Logo">
     <div id="personalNumberDisplay">رقمك الشخصي: <span id="personalNum">0000000</span></div>
     <div id="notifBell" title="الإشعارات">🔔<span id="notifBadge" class="badge hidden">0</span></div>
@@ -92,31 +196,6 @@
 
   <!-- pages -->
   <main id="mainContent">
-    <!-- login page -->
-    <div id="loginPage" class="form-box login-page hidden">
-      <h3 style="text-align:center;color:#FFCB01;">تسجيل الدخول / التسجيل</h3>
-      <label>ضع الأسم</label>
-      <input type="text" id="loginName" placeholder="أدخل اسمك">
-      <label>البريد الإلكتروني</label>
-      <input type="email" id="loginEmail" placeholder="example@domain.com">
-      <label>كلمة السر</label>
-      <div style="position:relative;">
-        <input type="password" id="loginPassword" placeholder="كلمة السر">
-        <button id="loginTogglePwd" style="position:absolute;left:6px;top:10px;height:36px;width:80px;cursor:pointer;">اظهار</button>
-      </div>
-      <label>رقم هاتف</label>
-      <input type="text" id="loginPhone" placeholder="مثال: 0999xxxxxx">
-      <label>ضع الرقم الشخصي (غير قابل للتعديل)</label>
-      <input type="text" id="loginPersonalNumber" readonly>
-      <div class="small-muted" style="margin-top:6px;">
-        ملاحظة: لن يتم ارسال اي كود على البريد الإلكتروني او رقم الهاتف.
-        فقط قم بتعبئة بياناتك الاصلية ففي حال حدوث مشكلة نستطيع التواصل معك.
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
-        <button id="doLoginBtn">تسجيل الدخول</button>
-      </div>
-      <div id="loginError" class="error" style="display:none;"></div>
-    </div>
 
     <!-- profile page -->
     <div id="profilePage" class="hidden">
@@ -316,20 +395,23 @@
   </main>
 
 <script>
-/* ---------- Frontend logic ---------- 
-   يتواصل مع backend عبر /api/*
-   يحتوي على تسجيل دخول، ارسال طلبات، مساعدة، شحن رصيد، عروض، اشعارات.
+/* ---------- Frontend logic (مصحح) ----------
+   تواصل مع backend عبر https://fourb-tawy.onrender.com
 */
 
-// helpers
-const API_ROOT = '';
+const API_ROOT = 'https://fourb-tawy.onrender.com'; // استخدمت رابط السيرفر الذي ربطته مسبقاً
 
+// ==== helpers
 function $(id){ return document.getElementById(id); }
-function show(id){ $(id).classList.remove('hidden'); }
-function hide(id){ $(id).classList.add('hidden'); }
+function show(id){ const el=$(id); if(el) el.classList.remove('hidden'); }
+function hide(id){ const el=$(id); if(el) el.classList.add('hidden'); }
 function hideAllPages(){
   ['homePage','gamesPage','appsPage','ordersPage','paymentDetailsPage','reviewPage','helpPage','profilePage','loginPage','offersPage'].forEach(id => { const e=$(id); if(e) e.classList.add('hidden'); });
 }
+// ======= Helper to safely add listeners and get elements =======
+function onIf(id, ev, fn){ const el = $(id); if(el) el.addEventListener(ev, fn); }
+function valOrEmpty(id){ const el = $(id); return el ? el.value : ''; }
+
 let currentProfile = null;
 let selectedGameOption = '';
 let selectedAppOption = '';
@@ -339,74 +421,70 @@ const priceMapPUBG={"60 شدة":"6000 ل.س","325 شدة":"25000 ل.س","660 ش�
 const priceMappubg1={"كود 60 شده":"12500 ل.س"};
 const priceMapApps = {"تطبيق 1":"5000 ل.س","تطبيق 2":"10000 ل.س","تطبيق 3":"15000 ل.س"};
 
-// init UI bindings
+// ===== Initialization (آمن)
 document.addEventListener('DOMContentLoaded', ()=> {
   // menu open/close
-  $('menuBtn').addEventListener('click', ()=> { $('sidebar').classList.toggle('active'); });
-  $('sidebarCloseBtn').addEventListener('click', ()=> { $('sidebar').classList.remove('active'); });
-  $('sidebarProfileArea').addEventListener('click', ()=> { openProfile(); $('sidebar').classList.remove('active'); });
+  onIf('menuBtn','click', ()=> { const s=$('sidebar'); if(s) s.classList.toggle('active'); });
+  onIf('sidebarCloseBtn','click', ()=> { const s=$('sidebar'); if(s) s.classList.remove('active'); });
+  onIf('sidebarProfileArea','click', ()=> { openProfile(); const s=$('sidebar'); if(s) s.classList.remove('active'); });
 
-  // sidebar links
-  $('linkHome').addEventListener('click', e=>{ e.preventDefault(); showHome(); $('sidebar').classList.remove('active'); });
-  $('linkOrders').addEventListener('click', e=>{ e.preventDefault(); showOrders(); $('sidebar').classList.remove('active'); });
-  $('linkContact').addEventListener('click', e=>{ e.preventDefault(); window.open('https://wa.me/79228576801','_blank'); $('sidebar').classList.remove('active'); });
-  $('linkHelp').addEventListener('click', e=>{ e.preventDefault(); showHelp(); $('sidebar').classList.remove('active'); });
-  $('linkOffers').addEventListener('click', e=>{ e.preventDefault(); showOffers(); $('sidebar').classList.remove('active'); });
-  $('linkJoinWhats').addEventListener('click', e=>{ e.preventDefault(); window.open('https://chat.whatsapp.com/LvrWRUCqLOw4cxjPlnH33J?mode=ems_copy_t','_blank'); });
-  $('linkGames').addEventListener('click', e=>{ e.preventDefault(); showGames(); $('sidebar').classList.remove('active'); });
-  $('linkApps').addEventListener('click', e=>{ e.preventDefault(); showApps(); $('sidebar').classList.remove('active'); });
-  $('btnCharge').addEventListener('click', ()=>{ $('sidebar').classList.remove('active'); openChargePage(); });
+  // sidebar links (آمن)
+  onIf('linkHome','click', e=>{ e.preventDefault(); showHome(); const s=$('sidebar'); if(s) s.classList.remove('active'); });
+  onIf('linkOrders','click', e=>{ e.preventDefault(); showOrders(); const s=$('sidebar'); if(s) s.classList.remove('active'); });
+  onIf('linkContact','click', e=>{ e.preventDefault(); window.open('https://wa.me/79228576801','_blank'); const s=$('sidebar'); if(s) s.classList.remove('active'); });
+  onIf('linkHelp','click', e=>{ e.preventDefault(); showHelp(); const s=$('sidebar'); if(s) s.classList.remove('active'); });
+  onIf('linkOffers','click', e=>{ e.preventDefault(); showOffers(); const s=$('sidebar'); if(s) s.classList.remove('active'); });
+  onIf('linkJoinWhats','click', e=>{ e.preventDefault(); window.open('https://chat.whatsapp.com/LvrWRUCqLOw4cxjPlnH33J?mode=ems_copy_t','_blank'); });
+  onIf('linkGames','click', e=>{ e.preventDefault(); showGames(); const s=$('sidebar'); if(s) s.classList.remove('active'); });
+  onIf('linkApps','click', e=>{ e.preventDefault(); showApps(); const s=$('sidebar'); if(s) s.classList.remove('active'); });
+  onIf('btnCharge','click', ()=>{ const s=$('sidebar'); if(s) s.classList.remove('active'); openChargePage(); });
 
   // notif
-  $('notifBell').addEventListener('click', ()=> { $('notifPanel').classList.toggle('hidden'); loadNotifications(); });
-  $('notifCloseBtn').addEventListener('click', ()=> $('notifPanel').classList.add('hidden'));
-  $('notifClearBtn').addEventListener('click', () => { $('notifList').innerHTML=''; $('notifBadge').classList.add('hidden'); });
+  onIf('notifBell','click', ()=> { const p=$('notifPanel'); if(p) p.classList.toggle('hidden'); loadNotifications(); });
+  onIf('notifCloseBtn','click', ()=> { const p=$('notifPanel'); if(p) p.classList.add('hidden'); });
+  onIf('notifClearBtn','click', () => { const nl=$('notifList'); const nb=$('notifBadge'); if(nl) nl.innerHTML=''; if(nb) nb.classList.add('hidden'); });
 
   // login toggles
-  $('loginTogglePwd').addEventListener('click', function(){ const inp=$('loginPassword'); if(inp.type==='password'){ inp.type='text'; this.textContent='اخفِ'; } else { inp.type='password'; this.textContent='اظهار'; }});
-  $('doLoginBtn').addEventListener('click', doLogin);
+  onIf('loginTogglePwd','click', function(){ const inp=$('loginPassword'); if(!inp) return; if(inp.type==='password'){ inp.type='text'; this.textContent='اخفِ'; } else { inp.type='password'; this.textContent='اظهار'; }});
+  onIf('doLoginBtn','click', doLogin);
 
   // profile
-  $('requestEditBtn').addEventListener('click', requestProfileEdit);
-  $('confirmSaveBtn').addEventListener('click', confirmProfileSave);
-  $('profileBackBtn').addEventListener('click', showHome);
+  onIf('requestEditBtn','click', requestProfileEdit);
+  onIf('confirmSaveBtn','click', confirmProfileSave);
+  onIf('profileBackBtn','click', showHome);
 
   // help
-  $('helpBackBtn').addEventListener('click', showHome);
-  $('helpSubmitBtn').addEventListener('click', submitHelp);
-  $('helpFileUpload').addEventListener('change', async function(){ await uploadFileToImgbb(this.files[0], 'helpFileLink','helpUploadStatus'); });
+  onIf('helpBackBtn','click', showHome);
+  onIf('helpSubmitBtn','click', submitHelp);
+  onIf('helpFileUpload','change', async function(){ if(this.files && this.files[0]) await uploadFileToImgbb(this.files[0], 'helpFileLink','helpUploadStatus'); });
 
   // games/app selects
-  $('gameSelect').addEventListener('change', function(){ buildGameOptions(this.value); });
-  $('appSelect').addEventListener('change', function(){ buildAppOptions(this.value); });
+  onIf('gameSelect','change', function(){ buildGameOptions(this.value); });
+  onIf('appSelect','change', function(){ buildAppOptions(this.value); });
 
-  $('idField').addEventListener('input', updateSubmitButtonGames);
-  $('appIdField').addEventListener('input', updateSubmitButtonApps);
-  $('submitForm').addEventListener('click', ()=> showPaymentDetailsFromSubmit('gamesPage'));
-  $('appSubmitForm').addEventListener('click', ()=> showPaymentDetailsFromSubmit('appsPage'));
+  onIf('idField','input', updateSubmitButtonGames);
+  onIf('appIdField','input', updateSubmitButtonApps);
+  onIf('submitForm','click', ()=> showPaymentDetailsFromSubmit('gamesPage'));
+  onIf('appSubmitForm','click', ()=> showPaymentDetailsFromSubmit('appsPage'));
 
   // payment details
-  $('pdCashSelect').addEventListener('change', onPdCashChange);
-  $('pdToggleQrBtn').addEventListener('click', toggleQr);
-  $('pdCopyBtn').addEventListener('click', ()=>{ const val=$('pdCopyField').value; if(val) navigator.clipboard?.writeText(val).then(()=>alert('تم النسخ')).catch(()=>prompt('انسخ يدوياً:',val)); else alert('لا يوجد نص للنسخ'); });
-  $('paymentFileUpload').addEventListener('change', async function(){ await uploadFileToImgbb(this.files[0], 'paymentFileLink','paymentUploadStatus'); });
-  $('pdSubmitForm').addEventListener('click', submitPaymentDetails);
-  $('pdBackBtn').addEventListener('click', ()=> returnFromPaymentDetails());
+  onIf('pdCashSelect','change', onPdCashChange);
+  onIf('pdToggleQrBtn','click', toggleQr);
+  onIf('pdCopyBtn','click', ()=>{ const val = valOrEmpty('pdCopyField'); if(val) navigator.clipboard?.writeText(val).then(()=>alert('تم النسخ')).catch(()=>prompt('انسخ يدوياً:',val)); else alert('لا يوجد نص للنسخ'); });
+  onIf('paymentFileUpload','change', async function(){ if(this.files && this.files[0]) await uploadFileToImgbb(this.files[0], 'paymentFileLink','paymentUploadStatus'); });
+  onIf('pdSubmitForm','click', submitPaymentDetails);
+  onIf('pdBackBtn','click', ()=> returnFromPaymentDetails());
 
-  // orders page
-  $('ordersBackBtn').addEventListener('click', showHome);
+  // orders/review/offers back
+  onIf('ordersBackBtn','click', showHome);
+  onIf('reviewBackBtn','click', showHome);
+  onIf('offersBackBtn','click', showHome);
 
-  // review page
-  $('reviewBackBtn').addEventListener('click', showHome);
-
-  // offers page
-  $('offersBackBtn').addEventListener('click', showHome);
-
-  // buttons
-  $('cardGames').addEventListener('click', showGames);
-  $('cardApps').addEventListener('click', showApps);
-  $('goOrdersBtn').addEventListener('click', showOrders);
-  $('goOrdersBtnApp').addEventListener('click', showOrders);
+  // cards/buttons
+  onIf('cardGames','click', showGames);
+  onIf('cardApps','click', showApps);
+  onIf('goOrdersBtn','click', showOrders);
+  onIf('goOrdersBtnApp','click', showOrders);
 
   // load profile from localStorage if present
   const saved = localStorage.getItem('user_profile_v1');
@@ -422,8 +500,9 @@ document.addEventListener('DOMContentLoaded', ()=> {
   }
   refreshUIFromProfile();
   showHome();
-  // poll server for updates every 6s
-  setInterval(()=>{ refreshNotificationsCount(); fetchOffers(); }, 6000);
+
+  // poll server for updates every 6s (آمن)
+  setInterval(()=>{ try{ refreshNotificationsCount(); fetchOffers(); }catch(e){ console.error('poll error',e); } }, 6000);
   refreshNotificationsCount();
   fetchOffers();
 });
@@ -434,26 +513,27 @@ function showGames(){ hideAllPages(); show('gamesPage'); window.scrollTo({top:0}
 function showApps(){ hideAllPages(); show('appsPage'); window.scrollTo({top:0}); }
 function showHelp(){ hideAllPages(); show('helpPage'); window.scrollTo({top:0}); }
 function openProfile(){ hideAllPages(); show('profilePage'); fillProfileFields(); }
-function openChargePage(){ /* reuse paymentDetailsPage for charging but simpler UI could be added */ hideAllPages(); show('paymentDetailsPage'); $('pdTitle').textContent='شحن الرصيد'; $('pdTopInfo').textContent='اطلب شحن الرصيد عبر رفع ايصال التحويل'; }
+function openChargePage(){ hideAllPages(); show('paymentDetailsPage'); const t=$('pdTitle'); if(t) t.textContent='شحن الرصيد'; const info=$('pdTopInfo'); if(info) info.textContent='اطلب شحن الرصيد عبر رفع ايصال التحويل'; }
 function showOrders(){ hideAllPages(); show('ordersPage'); loadOrdersList(); }
 function showOffers(){ hideAllPages(); show('offersPage'); fetchOffers(); }
 
 // ---------- profile helpers ----------
 function refreshUIFromProfile(){
-  $('personalNum').textContent = currentProfile.personalNumber || '';
-  $('personalField').value = currentProfile.personalNumber || '';
-  $('appPersonalField').value = currentProfile.personalNumber || '';
-  $('helpPersonalField').value = currentProfile.personalNumber || '';
-  $('loginPersonalNumber').value = currentProfile.personalNumber || '';
-  $('sidebarName').textContent = currentProfile.name || 'ضيف';
-  $('sidebarAvatar').textContent = (currentProfile.name && currentProfile.name.trim().length>0) ? currentProfile.name.trim().charAt(0).toUpperCase() : 'أ';
-  $('sidebarPersonal').textContent = 'رقم: ' + (currentProfile.personalNumber || '');
+  const pn = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : '';
+  const elPersonalNum = $('personalNum'); if(elPersonalNum) elPersonalNum.textContent = pn;
+  const pf = $('personalField'); if(pf) pf.value = pn;
+  const apf = $('appPersonalField'); if(apf) apf.value = pn;
+  const hpf = $('helpPersonalField'); if(hpf) hpf.value = pn;
+  const lpn = $('loginPersonalNumber'); if(lpn) lpn.value = pn;
+  const sideName = $('sidebarName'); if(sideName) sideName.textContent = currentProfile.name || 'ضيف';
+  const sideAv = $('sidebarAvatar'); if(sideAv) sideAv.textContent = (currentProfile.name && currentProfile.name.trim().length>0) ? currentProfile.name.trim().charAt(0).toUpperCase() : 'أ';
+  const sidePersonal = $('sidebarPersonal'); if(sidePersonal) sidePersonal.textContent = 'رقم: ' + pn;
 }
 function fillProfileFields(){
-  $('profileName').value = currentProfile.name || '';
-  $('profileEmail').value = currentProfile.email || '';
-  $('profilePassword').value = currentProfile.password || '';
-  $('profilePhone').value = currentProfile.phone || '';
+  const n = $('profileName'); if(n) n.value = currentProfile.name || '';
+  const e = $('profileEmail'); if(e) e.value = currentProfile.email || '';
+  const p = $('profilePassword'); if(p) p.value = currentProfile.password || '';
+  const ph = $('profilePhone'); if(ph) ph.value = currentProfile.phone || '';
   applyProfileEditState();
 }
 function applyProfileEditState(){
@@ -463,37 +543,50 @@ function applyProfileEditState(){
     if(!el) return;
     if(canEdit){ el.removeAttribute('readonly'); } else { el.setAttribute('readonly','readonly'); }
   });
-  if(canEdit){ $('requestEditBtn').classList.add('hidden'); $('confirmSaveBtn').classList.remove('hidden'); $('profileMsg').textContent='يمكنك تعديل بياناتك الآن مرة واحدة ثم اضغط حفظ.'; }
-  else { $('requestEditBtn').classList.remove('hidden'); $('confirmSaveBtn').classList.add('hidden'); $('profileMsg').textContent='للتعديل اطلب موافقة من الإدارة عبر الزر أدناه.'; }
+  const reqBtn = $('requestEditBtn'); const saveBtn = $('confirmSaveBtn'); const msg = $('profileMsg');
+  if(canEdit){
+    if(reqBtn) reqBtn.classList.add('hidden');
+    if(saveBtn) saveBtn.classList.remove('hidden');
+    if(msg) msg.textContent='يمكنك تعديل بياناتك الآن مرة واحدة ثم اضغط حفظ.';
+  } else {
+    if(reqBtn) reqBtn.classList.remove('hidden');
+    if(saveBtn) saveBtn.classList.add('hidden');
+    if(msg) msg.textContent='للتعديل اطلب موافقة من الإدارة عبر الزر أدناه.';
+  }
 }
 
 // ---------- login/register ----------
 async function doLogin(){
-  const name = $('loginName').value.trim();
-  const email = $('loginEmail').value.trim();
-  const password = $('loginPassword').value;
-  const phone = $('loginPhone').value.trim();
-  const personal = $('loginPersonalNumber').value || currentProfile.personalNumber;
+  const name = (valOrEmpty('loginName') || '').trim();
+  const email = (valOrEmpty('loginEmail') || '').trim();
+  const password = valOrEmpty('loginPassword') || '';
+  const phone = (valOrEmpty('loginPhone') || '').trim();
+  const personal = valOrEmpty('loginPersonalNumber') || (currentProfile && currentProfile.personalNumber) || localStorage.getItem('personalNumber') || '';
   const errEl = $('loginError');
-  errEl.style.display='none';
-  if(!name){ errEl.textContent='الرجاء إدخال الاسم'; errEl.style.display='block'; return; }
-  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ errEl.textContent='صيغة البريد الإلكتروني غير صحيحة'; errEl.style.display='block'; return; }
-  if(!password){ errEl.textContent='الرجاء إدخال كلمة السر'; errEl.style.display='block'; return; }
+  if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
+  if(!name){ if(errEl){ errEl.textContent='الرجاء إدخال الاسم'; errEl.style.display='block'; } else alert('الرجاء إدخال الاسم'); return; }
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ if(errEl){ errEl.textContent='صيغة البريد الإلكتروني غير صحيحة'; errEl.style.display='block'; } else alert('صيغة البريد الإلكتروني غير صحيحة'); return; }
+  if(!password){ if(errEl){ errEl.textContent='الرجاء إدخال كلمة السر'; errEl.style.display='block'; } else alert('الرجاء إدخال كلمة السر'); return; }
 
-  // call register API
-  const resp = await fetch('/api/register', {
-    method:'POST', headers:{'content-type':'application/json'},
-    body: JSON.stringify({ name, email, password, phone, personalNumber: personal })
-  });
-  const data = await resp.json();
-  if(data && data.ok){
-    currentProfile = data.profile;
-    localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
-    refreshUIFromProfile();
-    showHome();
-    alert('تم تسجيل الدخول');
-  } else {
-    alert('فشل التسجيل: ' + (data.error || 'خطأ غير معروف'));
+  try{
+    const resp = await fetch(`${API_ROOT}/api/register`, {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ name, email, password, phone, personalNumber: personal })
+    });
+    if(!resp.ok){ const text = await resp.text(); throw new Error('HTTP ' + resp.status + ' ' + text); }
+    const data = await resp.json();
+    if(data && data.ok){
+      currentProfile = data.profile || { personalNumber: personal, name, email, phone };
+      localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
+      refreshUIFromProfile();
+      showHome();
+      alert('تم تسجيل الدخول');
+    } else {
+      alert('فشل التسجيل: ' + (data && data.error ? data.error : 'خطأ غير معروف'));
+    }
+  }catch(e){
+    console.error('doLogin error', e);
+    alert('خطأ أثناء التسجيل/تسجيل الدخول: ' + (e.message||e));
   }
 }
 
@@ -501,24 +594,26 @@ async function doLogin(){
 async function requestProfileEdit(){
   const ok = confirm('سيتم إرسال طلب تعديل بياناتك للإدارة. هل تريد المتابعة؟');
   if(!ok) return;
-  const resp = await fetch('/api/profile/request-edit', {
-    method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber })
-  });
-  const data = await resp.json();
-  if(data && data.ok){ alert('تم إرسال طلب التعديل. انتظر موافقة الإدارة.'); $('requestEditBtn').textContent='تم إرسال الطلب'; setTimeout(()=>$('requestEditBtn').textContent='طلب تعديل معلوماتك', 10000); } else { alert('فشل الإرسال'); }
+  try{
+    const resp = await fetch(`${API_ROOT}/api/profile/request-edit`, {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber })
+    });
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if(data && data.ok){ alert('تم إرسال طلب التعديل. انتظر موافقة الإدارة.'); const btn=$('requestEditBtn'); if(btn) { btn.textContent='تم إرسال الطلب'; setTimeout(()=>{ if(btn) btn.textContent='طلب تعديل معلوماتك'; }, 10000); } } else { alert('فشل في إرسال الطلب'); }
+  }catch(e){ console.error('requestProfileEdit', e); alert('فشل في إرسال الطلب'); }
 }
 
 function confirmProfileSave(){
-  // save to backend
-  const name = $('profileName').value.trim();
-  const email = $('profileEmail').value.trim();
-  const password = $('profilePassword').value;
-  const phone = $('profilePhone').value.trim();
+  const name = (valOrEmpty('profileName') || '').trim();
+  const email = (valOrEmpty('profileEmail') || '').trim();
+  const password = valOrEmpty('profilePassword') || '';
+  const phone = (valOrEmpty('profilePhone') || '').trim();
   if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert('البريد غير صالح'); return; }
   currentProfile.name = name; currentProfile.email = email; currentProfile.password = password; currentProfile.phone = phone; currentProfile.canEdit = false;
   localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
-  // also call register endpoint to save server-side
-  fetch('/api/register', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, email, password, phone, personalNumber: currentProfile.personalNumber }) });
+  // call server to persist (fire-and-forget, but safe)
+  fetch(`${API_ROOT}/api/register`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, email, password, phone, personalNumber: currentProfile.personalNumber }) }).catch(e=>console.error('save profile server error', e));
   alert('تم حفظ التعديلات');
   applyProfileEditState();
   refreshUIFromProfile();
@@ -526,284 +621,346 @@ function confirmProfileSave(){
 
 // ---------- help submit ----------
 async function submitHelp(){
-  const issue = $('helpIssueSelect').value;
-  const fileLink = $('helpFileLink').value;
-  const desc = $('helpDesc').value.trim();
-  const personal = currentProfile.personalNumber;
+  const issue = valOrEmpty('helpIssueSelect');
+  const fileLink = valOrEmpty('helpFileLink');
+  const desc = (valOrEmpty('helpDesc') || '').trim();
+  const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : localStorage.getItem('personalNumber');
   if(!issue){ alert('اختر مشكلتك'); return; }
-  const resp = await fetch('/api/help', {
-    method:'POST', headers:{'content-type':'application/json'},
-    body: JSON.stringify({ personal, issue, fileLink, desc, name: currentProfile.name, email: currentProfile.email, phone: currentProfile.phone })
-  });
-  const data = await resp.json();
-  if(data && data.ok){ alert('تم ارسال المشكلة'); show('helpSuccessPage'); hide('helpPage'); } else { alert('فشل الارسال'); }
+  try{
+    const resp = await fetch(`${API_ROOT}/api/help`, {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ personal, issue, fileLink, desc, name: currentProfile.name, email: currentProfile.email, phone: currentProfile.phone })
+    });
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if(data && data.ok){ alert('تم ارسال المشكلة'); // show success safely
+      const success = $('helpSuccessPage'); if(success){ show('helpSuccessPage'); hide('helpPage'); } else { showHome(); }
+    } else { alert('فشل الارسال'); }
+  }catch(e){ console.error('submitHelp', e); alert('فشل إرسال المشكلة'); }
 }
 
-// ---------- uploading to imgbb (client-side) ----------
+// ---------- uploading to server (يفضل) ----------
 async function uploadFileToImgbb(file, targetInputId = 'paymentFileLink', statusElId='paymentUploadStatus'){
   if(!file) return;
   const statusEl = $(statusElId);
-  if(statusEl) statusEl.textContent = 'جارية عملية الرفع... 0%';
+  if(statusEl) statusEl.textContent = 'جارية عملية الرفع...';
   try{
-    const key = (await fetch('/api/debug/db').then(r=>r.json()).then(d=>d && d.tgOffsets!==undefined ? null : null)) || null;
-    // we'll use client-side direct imgbb with the server-provided key if needed.
-    // For simplicity: call imgbb directly. (IMGBB_KEY is set server-side, but we don't expose it via API here for security.)
-    // Instead we use the upload endpoints already implemented in the original file which used IMGBB_API_KEY directly on client.
-    // Here we fallback to using a tiny anonymous upload service by sending file as base64 to server endpoint '/api/upload' which stores file locally.
-    // But simpler for now: attempt to upload via imgbb by building a FormData and sending to the imgbb API.
-    const imgbbKey = null; // we don't include key client side for security; the server has it.
-    // So we will upload to server endpoint /api/upload (which returns local path), but server /uploads is static only if configured.
-    // For compatibility with original flow, try using fetch to https://api.imgbb.com/1/upload with the key inlined (not ideal but user gave key earlier).
-    // We'll prompt the user to confirm using the shared key (since you asked to use the key).
-    const confirmUseKey = true;
-    if(confirmUseKey){
-      // use the provided key (this is okay here because you gave it)
-      const IMGBB_KEY = "e5603dfd5675ed2b5a671577abcf6d33";
-      const fd = new FormData();
-      fd.append('image', file);
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`);
-      xhr.onload = function(){
-        if(xhr.status>=200 && xhr.status<300){
-          try{
-            const resp = JSON.parse(xhr.responseText||'{}');
-            const url = resp && resp.data && (resp.data.url || resp.data.display_url);
-            if(url){
-              $(targetInputId).value = url;
-              if(statusEl) statusEl.textContent = 'تم الرفع بنجاح';
-              alert('تم رفع الملف');
-            } else {
-              if(statusEl) statusEl.textContent = 'فشل الرفع';
-              alert('فشل رفع الملف');
-            }
-          }catch(e){ if(statusEl) statusEl.textContent = 'خطأ في الرفع'; alert('خطأ في رفع الملف'); }
-        } else {
-          if(statusEl) statusEl.textContent = 'فشل الرفع';
-          alert('فشل الرفع: ' + xhr.status);
-        }
-      };
-      xhr.onerror = function(){ if(statusEl) statusEl.textContent='خطأ في الشبكة'; alert('خطأ في الشبكة أثناء الرفع'); };
-      xhr.upload.onprogress = function(ev){ if(ev.lengthComputable){ const pct = Math.round((ev.loaded/ev.total)*100); if(statusEl) statusEl.textContent = `جارية عملية الرفع... ${pct}%`; } };
-      xhr.send(fd);
+    // Try server upload first (server should implement POST /api/upload => { ok:true, url })
+    const fd = new FormData();
+    fd.append('file', file);
+    const resp = await fetch(`${API_ROOT}/api/upload`, { method:'POST', body: fd });
+    if(resp.ok){
+      const data = await resp.json().catch(()=>null);
+      if(data && data.ok && data.url){
+        const inp = $(targetInputId); if(inp) inp.value = data.url;
+        if(statusEl) statusEl.textContent = 'تم الرفع بنجاح';
+        alert('تم رفع الملف');
+        return;
+      }
     }
-  }catch(e){ console.error(e); if($(statusElId)) $(statusElId).textContent = 'خطأ أثناء الرفع'; alert('خطأ أثناء الرفع'); }
+    // fallback: server didn't support upload endpoint or failed
+    if(statusEl) statusEl.textContent = 'فشل الرفع عبر الخادم';
+    alert('فشل رفع الملف عبر الخادم. الرجاء التواصل مع الدعم أو إعداد IMGBB على الخادم.');
+  }catch(e){
+    console.error('uploadFile error', e);
+    if(statusEl) statusEl.textContent = 'خطأ أثناء الرفع';
+    alert('خطأ أثناء الرفع: ' + (e.message || e));
+  }
 }
 
 // ---------- games/apps options ----------
 function buildGameOptions(val){
-  $('optionsContainer').innerHTML=''; selectedGameOption=''; $('priceDisplay').textContent='';
+  const container = $('optionsContainer');
+  if(container) container.innerHTML='';
+  selectedGameOption=''; const pd = $('priceDisplay'); if(pd) { pd.textContent=''; pd.style.color=''; }
   if(val==='فري فاير ايدي'){ currentMap = priceMapFF; }
   else if(val==='ببجي ايدي'){ currentMap = priceMapPUBG; }
   else if(val==='جواكر'){ currentMap = priceMappubg1; }
   else currentMap = null;
-  if(currentMap){
+  if(currentMap && container){
     Object.keys(currentMap).forEach(opt=>{
       const d = document.createElement('div'); d.className='button-option'; d.textContent = opt;
       d.addEventListener('click', ()=> {
-        document.querySelectorAll('#optionsContainer .button-option').forEach(x=>x.classList.remove('selected'));
+        container.querySelectorAll('.button-option').forEach(x=>x.classList.remove('selected'));
         d.classList.add('selected');
         selectedGameOption = opt;
-        $('priceDisplay').textContent = `الحزمة: ${opt}\nالسعر: ${currentMap[opt]}`; $('priceDisplay').style.color='#0f0';
+        if(pd){ pd.textContent = `الحزمة: ${opt}\nالسعر: ${currentMap[opt]}`; pd.style.color='#0f0'; }
         updateSubmitButtonGames();
       });
-      $('optionsContainer').appendChild(d);
+      container.appendChild(d);
     });
   }
 }
 
 function buildAppOptions(val){
-  $('optionsContainerApps').innerHTML=''; selectedAppOption=''; $('priceDisplayApps').textContent='';
-  if(priceMapApps[val]){
+  const container = $('optionsContainerApps');
+  if(container) container.innerHTML='';
+  selectedAppOption=''; const pd = $('priceDisplayApps'); if(pd) { pd.textContent=''; pd.style.color=''; }
+  if(priceMapApps[val] && container){
     const d = document.createElement('div'); d.className='button-option'; d.textContent = val;
     d.addEventListener('click', ()=> {
-      document.querySelectorAll('#optionsContainerApps .button-option').forEach(x=>x.classList.remove('selected'));
+      container.querySelectorAll('.button-option').forEach(x=>x.classList.remove('selected'));
       d.classList.add('selected');
       selectedAppOption = val;
-      $('priceDisplayApps').textContent = `السعر: ${priceMapApps[val]}`; $('priceDisplayApps').style.color='#0f0';
+      if(pd){ pd.textContent = `السعر: ${priceMapApps[val]}`; pd.style.color='#0f0'; }
       updateSubmitButtonApps();
     });
-    $('optionsContainerApps').appendChild(d);
+    container.appendChild(d);
   }
 }
 
-function updateSubmitButtonGames(){ const idf=$('idField').value.trim(); $('submitForm').disabled = !(selectedGameOption && idf); }
-function updateSubmitButtonApps(){ const idf=$('appIdField').value.trim(); $('appSubmitForm').disabled = !(selectedAppOption && idf); }
+function updateSubmitButtonGames(){ const idf = valOrEmpty('idField') ? valOrEmpty('idField').trim() : ''; const btn = $('submitForm'); if(btn) btn.disabled = !(selectedGameOption && idf); }
+function updateSubmitButtonApps(){ const idf = valOrEmpty('appIdField') ? valOrEmpty('appIdField').trim() : ''; const btn = $('appSubmitForm'); if(btn) btn.disabled = !(selectedAppOption && idf); }
 
 // ---------- payment flow ----------
 let previousBeforePayment = null;
 function showPaymentDetailsFromSubmit(fromPage){
   previousBeforePayment = fromPage;
   hideAllPages(); show('paymentDetailsPage');
-  $('pdTopInfo').textContent = '';
-  $('pdPriceInfo').textContent = '';
-  $('pdCashSelect').value = '';
-  $('pdCopyField').value = '';
-  $('qrContainer').style.display='none';
-  $('syrtelQrContainer').style.display='none';
-  $('paymentFileLink').value = '';
-  $('paymentUploadStatus').textContent = '';
-  $('pdNote').textContent = 'اختر طريقة الدفع لمتابعة التعليمات';
-  $('shamFields').style.display='none'; $('syrtelFields').style.display='none'; $('hawalaFields').style.display='none';
+  const pdTop = $('pdTopInfo'); if(pdTop) pdTop.textContent = '';
+  const pdPrice = $('pdPriceInfo'); if(pdPrice) pdPrice.textContent = '';
+  const pdCash = $('pdCashSelect'); if(pdCash) pdCash.value = '';
+  const pdCopy = $('pdCopyField'); if(pdCopy) pdCopy.value = '';
+  const qr = $('qrContainer'); if(qr) qr.style.display='none';
+  const sqqr = $('syrtelQrContainer'); if(sqqr) sqqr.style.display='none';
+  const pLink = $('paymentFileLink'); if(pLink) pLink.value = '';
+  const pu = $('paymentUploadStatus'); if(pu) pu.textContent = '';
+  const pdNote = $('pdNote'); if(pdNote) pdNote.textContent = 'اختر طريقة الدفع لمتابعة التعليمات';
+  const sham = $('shamFields'); if(sham) sham.style.display='none';
+  const syr = $('syrtelFields'); if(syr) syr.style.display='none';
+  const haw = $('hawalaFields'); if(haw) haw.style.display='none';
 }
 
 function returnFromPaymentDetails(){ if(previousBeforePayment==='gamesPage') showGames(); else if(previousBeforePayment==='appsPage') showApps(); else showHome(); }
 
 // pd cash change
 function onPdCashChange(){
-  const value = $('pdCashSelect').value;
+  const value = valOrEmpty('pdCashSelect');
   const pdNoteEl = $('pdNote');
+  const sham = $('shamFields'), syr = $('syrtelFields'), haw = $('hawalaFields'), qr = $('qrContainer'), sqr = $('syrtelQrContainer'), copy = $('pdCopyField');
   if(value==='sham'){
-    $('shamFields').style.display='block'; $('syrtelFields').style.display='none'; $('hawalaFields').style.display='none';
-    $('qrContainer').style.display='none'; $('syrtelQrContainer').style.display='none';
-    $('pdCopyField').value = 'e5eca798a4add8f1b86d389330131c82';
-    pdNoteEl.textContent = `تعليمات شام كاش...`;
+    if(sham) sham.style.display='block'; if(syr) syr.style.display='none'; if(haw) haw.style.display='none';
+    if(qr) qr.style.display='none'; if(sqr) sqr.style.display='none';
+    if(copy) copy.value = 'e5eca798a4add8f1b86d389330131c82';
+    if(pdNoteEl) pdNoteEl.textContent = `تعليمات شام كاش...`;
   } else if(value==='syrtel'){
-    $('shamFields').style.display='none'; $('syrtelFields').style.display='block'; $('hawalaFields').style.display='none';
-    $('pdCopyField').value = '72289118';
-    pdNoteEl.textContent = `تعليمات سيرتيل...`;
+    if(sham) sham.style.display='none'; if(syr) syr.style.display='block'; if(haw) haw.style.display='none';
+    if(copy) copy.value = '72289118';
+    if(pdNoteEl) pdNoteEl.textContent = `تعليمات سيرتيل...`;
   } else if(value==='hawala'){
-    $('shamFields').style.display='none'; $('syrtelFields').style.display='none'; $('hawalaFields').style.display='block';
-    $('pdCopyField').value = '';
-    pdNoteEl.textContent = `قم بتحويل الرصيد المطلوب إلى: عبد الرحمن احمد عتون`;
+    if(sham) sham.style.display='none'; if(syr) syr.style.display='none'; if(haw) haw.style.display='block';
+    if(copy) copy.value = '';
+    if(pdNoteEl) pdNoteEl.textContent = `قم بتحويل الرصيد المطلوب إلى: عبد الرحمن احمد عتون`;
   } else {
-    $('shamFields').style.display='none'; $('syrtelFields').style.display='none'; $('hawalaFields').style.display='none';
-    $('pdCopyField').value = '';
-    pdNoteEl.textContent = 'اختر طريقة الدفع لمتابعة التعليمات';
+    if(sham) sham.style.display='none'; if(syr) syr.style.display='none'; if(haw) haw.style.display='none';
+    if(copy) copy.value = '';
+    if(pdNoteEl) pdNoteEl.textContent = 'اختر طريقة الدفع لمتابعة التعليمات';
   }
 }
 
 function toggleQr(){
-  const m = $('pdCashSelect').value;
-  if(m==='sham'){ $('qrContainer').style.display = $('qrContainer').style.display === 'none' ? 'block' : 'none'; }
-  else if(m==='syrtel'){ $('syrtelQrContainer').style.display = $('syrtelQrContainer').style.display === 'none' ? 'block' : 'none'; }
+  const m = valOrEmpty('pdCashSelect');
+  if(m==='sham'){ const q=$('qrContainer'); if(q) q.style.display = q.style.display === 'none' ? 'block' : 'none'; }
+  else if(m==='syrtel'){ const q=$('syrtelQrContainer'); if(q) q.style.display = q.style.display === 'none' ? 'block' : 'none'; }
   else alert('صورة QR غير متاحة لهذه الطريقة');
 }
 
 // submit payment details -> creates order or charge
 async function submitPaymentDetails(){
-  const cashMethod = $('pdCashSelect').value;
-  const fileLink = $('paymentFileLink').value;
+  const cashMethod = valOrEmpty('pdCashSelect');
+  const fileLink = valOrEmpty('paymentFileLink');
   if(!cashMethod){ alert('اختر طريقة الدفع'); return; }
-  // if coming from games
-  if(previousBeforePayment === 'gamesPage'){
-    const personal = $('personalField').value;
-    const game = $('gameSelect').value;
-    const idField = $('idField').value;
-    const price = $('priceDisplay').textContent || '';
-    if(!game || !idField || !selectedGameOption){ alert('اكمل البيانات'); return; }
-    const body = { personal, phone: currentProfile.phone, type:'شحن لعبة', item: `${game} - ${selectedGameOption}`, idField, fileLink, cashMethod };
-    const r = await fetch('/api/orders', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
-    const data = await r.json();
-    if(data && data.ok){ hideAllPages(); show('reviewPage'); $('reviewMsg').textContent='تم ارسال طلبك وسيتم مراجعته'; localStorage.setItem('lastOrderId', data.order.id); } else alert('فشل ارسال الطلب');
-  } else if(previousBeforePayment === 'appsPage'){
-    const personal = $('appPersonalField').value;
-    const app = $('appSelect').value;
-    const idField = $('appIdField').value;
-    if(!app || !idField || !selectedAppOption){ alert('اكمل البيانات'); return; }
-    const body = { personal, phone: currentProfile.phone, type:'شراء تطبيق', item: `${app} - ${selectedAppOption}`, idField, fileLink, cashMethod };
-    const r = await fetch('/api/orders', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
-    const data = await r.json();
-    if(data && data.ok){ hideAllPages(); show('reviewPage'); $('reviewMsg').textContent='تم ارسال طلب التطبيق'; } else alert('فشل ارسال الطلب');
-  } else {
-    // if this is charge flow
-    const personal = currentProfile.personalNumber;
-    const amount = prompt('كم المبلغ الذي تريد شحنه؟ (أدخل رقم فقط)');
-    if(!amount || isNaN(Number(amount))){ alert('قيمة غير صحيحة'); return; }
-    const method = cashMethod || 'unknown';
-    const r = await fetch('/api/charge', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal, phone: currentProfile.phone, amount, method, fileLink }) });
-    const data = await r.json();
-    if(data && data.ok){ alert('تم ارسال طلب الشحن. انتظر الموافقة.'); hideAllPages(); showHome(); } else alert('فشل ارسال طلب الشحن');
+  try{
+    if(previousBeforePayment === 'gamesPage'){
+      const personal = valOrEmpty('personalField') || (currentProfile && currentProfile.personalNumber);
+      const game = valOrEmpty('gameSelect');
+      const idField = valOrEmpty('idField');
+      const price = valOrEmpty('priceDisplay') || '';
+      if(!game || !idField || !selectedGameOption){ alert('اكمل البيانات'); return; }
+      const body = { personal, phone: currentProfile.phone, type:'شحن لعبة', item: `${game} - ${selectedGameOption}`, idField, fileLink, cashMethod };
+      const r = await fetch(`${API_ROOT}/api/orders`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const data = await r.json();
+      if(data && data.ok){ hideAllPages(); show('reviewPage'); const rm=$('reviewMsg'); if(rm) rm.textContent='تم ارسال طلبك وسيتم مراجعته'; localStorage.setItem('lastOrderId', data.order && data.order.id ? data.order.id : ''); } else alert('فشل ارسال الطلب');
+    } else if(previousBeforePayment === 'appsPage'){
+      const personal = valOrEmpty('appPersonalField') || (currentProfile && currentProfile.personalNumber);
+      const app = valOrEmpty('appSelect');
+      const idField = valOrEmpty('appIdField');
+      if(!app || !idField || !selectedAppOption){ alert('اكمل البيانات'); return; }
+      const body = { personal, phone: currentProfile.phone, type:'شراء تطبيق', item: `${app} - ${selectedAppOption}`, idField, fileLink, cashMethod };
+      const r = await fetch(`${API_ROOT}/api/orders`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      if(data && data.ok){ hideAllPages(); show('reviewPage'); const rm=$('reviewMsg'); if(rm) rm.textContent='تم ارسال طلب التطبيق'; } else alert('فشل ارسال الطلب');
+    } else {
+      // charge flow
+      const personal = currentProfile.personalNumber;
+      const amount = prompt('كم المبلغ الذي تريد شحنه؟ (أدخل رقم فقط)');
+      if(!amount || isNaN(Number(amount))){ alert('قيمة غير صحيحة'); return; }
+      const method = cashMethod || 'unknown';
+      const r = await fetch(`${API_ROOT}/api/charge`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal, phone: currentProfile.phone, amount, method, fileLink }) });
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      if(data && data.ok){ alert('تم ارسال طلب الشحن. انتظر الموافقة.'); hideAllPages(); showHome(); } else alert('فشل ارسال طلب الشحن');
+    }
+  }catch(e){
+    console.error('submitPaymentDetails', e);
+    alert('خطأ أثناء إرسال الطلب: ' + (e.message||e));
   }
 }
 
 // ---------- load orders / list ----------
 async function loadOrdersList(){
-  const personal = currentProfile.personalNumber;
-  const resp = await fetch('/api/notifications/' + personal);
-  const data = await resp.json();
-  if(data && data.ok){
-    const orders = data.orders || [];
-    const charges = data.charges || [];
-    const container = $('ordersList'); container.innerHTML = '';
-    if(orders.length===0 && charges.length===0){ container.innerHTML = '<div>لا توجد طلبات حتى الآن.</div>'; return; }
-    orders.forEach(o=>{
-      const d = document.createElement('div'); d.className='order-item';
-      d.innerHTML = `<strong>#${o.id}</strong> - ${o.type} - ${o.item || ''} <br> الايدي: ${o.idField || ''} <br> الهاتف: ${o.phone || ''} <br> الحالة: <strong>${o.status}</strong> <br> أنشئ: ${new Date(o.createdAt).toLocaleString()}`;
-      container.appendChild(d);
-    });
-    charges.forEach(c=>{
-      const d = document.createElement('div'); d.className='order-item';
-      d.innerHTML = `<strong>#${c.id}</strong> - شحن رصيد - المبلغ: ${c.amount} <br> الحالة: <strong>${c.status}</strong> <br> أنشئ: ${new Date(c.createdAt).toLocaleString()}`;
-      container.appendChild(d);
-    });
-  }
+  try{
+    const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : '';
+    const resp = await fetch(`${API_ROOT}/api/notifications/${personal}`);
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if(data && data.ok){
+      const orders = data.orders || [];
+      const charges = data.charges || [];
+      const container = $('ordersList'); if(!container) return;
+      container.innerHTML = '';
+      if(orders.length===0 && charges.length===0){ container.innerHTML = '<div>لا توجد طلبات حتى الآن.</div>'; return; }
+      orders.forEach(o=>{
+        const d = document.createElement('div'); d.className='order-item';
+        d.innerHTML = `<strong>#${o.id}</strong> - ${o.type} - ${o.item || ''} <br> الايدي: ${o.idField || ''} <br> الهاتف: ${o.phone || ''} <br> الحالة: <strong>${o.status}</strong> <br> أنشئ: ${new Date(o.createdAt).toLocaleString()}`;
+        container.appendChild(d);
+      });
+      charges.forEach(c=>{
+        const d = document.createElement('div'); d.className='order-item';
+        d.innerHTML = `<strong>#${c.id}</strong> - شحن رصيد - المبلغ: ${c.amount} <br> الحالة: <strong>${c.status}</strong> <br> أنشئ: ${new Date(c.createdAt).toLocaleString()}`;
+        container.appendChild(d);
+      });
+    }
+  }catch(e){ console.error('loadOrdersList', e); }
 }
 
 // ---------- notifications & offers ----------
 async function refreshNotificationsCount(){
-  const resp = await fetch('/api/notifications/' + currentProfile.personalNumber);
-  const data = await resp.json();
-  if(data && data.ok){
-    const offers = data.offers || [];
-    const orders = data.orders || [];
-    const charges = data.charges || [];
-    const unreadCount = (orders.filter(o=>o.replied).length) + (charges.filter(c=>c.replied).length) + (offers.length>0 ? 1 : 0);
-    if(unreadCount>0){ $('notifBadge').classList.remove('hidden'); $('notifBadge').textContent = String(unreadCount); } else { $('notifBadge').classList.add('hidden'); }
-  }
+  try{
+    const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : '';
+    const resp = await fetch(`${API_ROOT}/api/notifications/${personal}`);
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if(data && data.ok){
+      const offers = data.offers || [];
+      const orders = data.orders || [];
+      const charges = data.charges || [];
+      const unreadCount = (Array.isArray(orders) ? orders.filter(o=>o.replied).length : 0) + (Array.isArray(charges) ? charges.filter(c=>c.replied).length : 0) + (offers.length>0 ? 1 : 0);
+      const nb = $('notifBadge');
+      if(unreadCount>0){ if(nb) { nb.classList.remove('hidden'); nb.textContent = String(unreadCount); } } else { if(nb) nb.classList.add('hidden'); }
+    }
+  }catch(e){ console.error('refreshNotificationsCount', e); }
 }
 
 async function loadNotifications(){
-  const resp = await fetch('/api/notifications/' + currentProfile.personalNumber);
-  const data = await resp.json();
-  if(data && data.ok){
-    const offers = data.offers || [];
-    const orders = data.orders || [];
-    const charges = data.charges || [];
-    const list = $('notifList'); list.innerHTML = '';
-    orders.filter(o=>o.replied).forEach(o=>{
-      const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-      el.innerHTML = `<div><strong>حالة الطلب #${o.id}</strong></div><div>${o.status}</div>`;
-      list.appendChild(el);
-    });
-    charges.filter(c=>c.replied).forEach(c=>{
-      const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-      el.innerHTML = `<div><strong>حالة شحنة #${c.id}</strong></div><div>${c.status}</div>`;
-      list.appendChild(el);
-    });
-    offers.forEach(of=>{
-      const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-      el.innerHTML = `<div><strong>عرض</strong></div><div>${of.text}</div><div style="margin-top:6px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
-      list.appendChild(el);
-    });
-  }
+  try{
+    const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : '';
+    const resp = await fetch(`${API_ROOT}/api/notifications/${personal}`);
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if(data && data.ok){
+      const offers = data.offers || [];
+      const orders = data.orders || [];
+      const charges = data.charges || [];
+      const list = $('notifList'); if(!list) return;
+      list.innerHTML = '';
+      (orders.filter?orders.filter(o=>o.replied):[]).forEach(o=>{
+        const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+        el.innerHTML = `<div><strong>حالة الطلب #${o.id}</strong></div><div>${o.status}</div>`;
+        list.appendChild(el);
+      });
+      (charges.filter?charges.filter(c=>c.replied):[]).forEach(c=>{
+        const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+        el.innerHTML = `<div><strong>حالة شحنة #${c.id}</strong></div><div>${c.status}</div>`;
+        list.appendChild(el);
+      });
+      offers.forEach(of=>{
+        const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+        el.innerHTML = `<div><strong>عرض</strong></div><div>${of.text}</div><div style="margin-top:6px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
+        list.appendChild(el);
+      });
+    }
+  }catch(e){ console.error('loadNotifications', e); }
 }
 
 async function fetchOffers(){
-  const resp = await fetch('/api/notifications/' + currentProfile.personalNumber);
-  const data = await resp.json();
-  if(data && data.ok){
-    const offers = data.offers || [];
-    const container = $('offersList'); container.innerHTML = '';
-    offers.forEach(of=>{
-      const el = document.createElement('div'); el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.padding='8px'; el.style.marginBottom='8px';
-      el.innerHTML = `<div>${of.text}</div><div style="margin-top:8px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
-      container.appendChild(el);
-    });
-  }
+  try{
+    const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : localStorage.getItem('personalNumber') || '';
+    const resp = await fetch(`${API_ROOT}/api/notifications/${personal}`);
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if(data && data.ok){
+      const offers = data.offers || [];
+      const container = $('offersList'); if(!container) return;
+      container.innerHTML = '';
+      offers.forEach(of=>{
+        const el = document.createElement('div'); el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.padding='8px'; el.style.marginBottom='8px';
+        el.innerHTML = `<div>${of.text}</div><div style="margin-top:8px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
+        container.appendChild(el);
+      });
+    }
+  }catch(e){ console.error('fetchOffers', e); }
 }
 
 async function ackOffer(id){
-  const resp = await fetch('/api/offer/ack', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber, offerId: id }) });
-  const data = await resp.json();
-  if(data && data.ok){ alert('تم إرسال التحقق'); }
+  try{
+    const resp = await fetch(`${API_ROOT}/api/offer/ack`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber, offerId: id }) });
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if(data && data.ok){ alert('تم إرسال التحقق'); fetchOffers(); refreshNotificationsCount(); } else alert('فشل التحقق');
+  }catch(e){ console.error('ackOffer', e); alert('خطأ أثناء التحقق'); }
 }
 
-// ---------- util: upload local file -> imgbb handled above ----------
-
 // ---------- misc ----------
-// fetch DB debug for imgbb key etc (not required)
-async function fetchDBDebug(){ const d = await fetch('/api/debug/db').then(r=>r.json()); return d; }
+async function fetchDBDebug(){ try{ const d = await fetch(`${API_ROOT}/api/debug/db`).then(r=>r.json()); return d; }catch(e){ console.error(e); return null; } }
 
+// === Forms: login/register (safe bindings) ===
+onIf('loginForm','submit', async (e)=>{
+  e.preventDefault();
+  const personal = valOrEmpty('loginPersonal');
+  const password = valOrEmpty('loginPassword');
+  try{
+    const res = await fetch(`${API_ROOT}/api/login`, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ personalNumber: personal, password })
+    });
+    const data = await res.json().catch(()=>({ ok:false }));
+    if(data.ok){
+      alert("تم تسجيل الدخول ✅");
+      localStorage.setItem("personalNumber", personal);
+      const lp = $('loginPage'); if(lp) lp.classList.add('hidden');
+    }else{
+      alert("فشل تسجيل الدخول ❌");
+    }
+  }catch(e){ console.error('login form', e); alert('خطأ أثناء تسجيل الدخول'); }
+});
+
+onIf('registerForm','submit', async (e)=>{
+  e.preventDefault();
+  const name = valOrEmpty('regName');
+  const email = valOrEmpty('regEmail');
+  const phone = valOrEmpty('regPhone');
+  const personal = valOrEmpty('regPersonal');
+  const password = valOrEmpty('regPassword');
+  try{
+    const res = await fetch(`${API_ROOT}/api/register`, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ name,email,phone,personalNumber:personal,password })
+    });
+    const data = await res.json().catch(()=>({ ok:false }));
+    if(data.ok){
+      alert("تم إنشاء الحساب ✅");
+      // switch to login
+      const lp = $('loginPage'); const rp = $('registerPage'); if(lp) lp.classList.remove('hidden'); if(rp) rp.classList.add('hidden');
+    }else{
+      alert("فشل إنشاء الحساب ❌");
+    }
+  }catch(e){ console.error('register form', e); alert('خطأ أثناء إنشاء الحساب'); }
+});
 </script>
 </body>
-      </html>
+  </html>
