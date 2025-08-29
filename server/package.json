@@ -2,7 +2,7 @@
   "name": "game-topup-app",
   "version": "1.0.0",
   "description": "Backend for game topup + telegram integration",
-  "main": "server/server.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server/server.js",
     "dev": "nodemon server/server.js"
