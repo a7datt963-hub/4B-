@@ -15,6 +15,7 @@ const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.use(cors());
 
 // ---- إعدادات البوتات (يمكن وضعها في متغيرات بيئية على Render / Heroku) ----
 const CFG = {
