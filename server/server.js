@@ -131,12 +131,42 @@ app.post('/api/register', async (req,res)=>{
   return res.json({ ok:true, profile:p });
 });
 
-app.post('/api/login', (req,res)=>{
-  const { personalNumber, email } = req.body;
+// ---- MODIFIED: api/login with password check + login notification ----
+app.post('/api/login', async (req,res)=>{
+  const { personalNumber, email, password } = req.body || {};
   let p = null;
   if(personalNumber) p = findProfileByPersonal(personalNumber);
-  else if(email) p = DB.profiles.find(x => x.email === email) || null;
-  if(!p) return res.status(404).json({ ok:false, error:'not found' });
+  else if(email) p = DB.profiles.find(x => x.email && x.email.toLowerCase() === String(email).toLowerCase()) || null;
+
+  if(!p) return res.status(404).json({ ok:false, error:'not_found' });
+
+  // if profile has a stored password and a password was provided, validate it
+  if(typeof p.password !== 'undefined' && String(p.password).length > 0){
+    if(typeof password === 'undefined' || String(password) !== String(p.password)){
+      return res.status(401).json({ ok:false, error:'invalid_password' });
+    }
+  }
+  // update last login
+  p.lastLogin = new Date().toISOString();
+  saveData(DB);
+
+  // send login notification to telegram (non-blocking)
+  (async ()=>{
+    try{
+      const text = `تسجيل دخول:
+الاسم: ${p.name || 'غير معروف'}
+الرقم الشخصي: ${p.personalNumber}
+الهاتف: ${p.phone || 'لا يوجد'}
+البريد: ${p.email || 'لا يوجد'}
+الوقت: ${p.lastLogin}`;
+      await fetch(`https://api.telegram.org/bot${CFG.BOT_LOGIN_REPORT_TOKEN}/sendMessage`, {
+        method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_LOGIN_REPORT_CHAT, text })
+      });
+    }catch(e){
+      console.warn('send login notify failed', e);
+    }
+  })();
+
   return res.json({ ok:true, profile:p });
 });
 
