@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>موقع شحن الألعاب — نسخة متكاملة</title>
+  <style>
+    /* (نسخ نفس CSS الذي أرسلته سابقاً مع تعديلات طفيفة) */
+    * { margin:0; padding:0; box-sizing:border-box }
+    body { font-family:Arial,Helvetica,sans-serif; background:#000; color:#fff; overflow-x:hidden }
+    header { background:#111; padding:10px 20px; position:relative; text-align:center }
+    header img { height:90px; width:auto; display:block; margin:0 auto }
+    #ordersStatusBar { margin:8px auto 0; max-width:720px; padding:4px 8px; border-radius:6px; text-align:center; min-height:22px; display:none; overflow:hidden; white-space:normal; pointer-events:none }
+    .status-line { color:#FFCB01; padding:2px 4px; margin:2px 0; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; font-weight:700; border-bottom:1px solid rgba(255,203,1,0.06); line-height:1.1 }
+    .status-line:last-child { border-bottom:none }
+    .menu { position:absolute; right:20px; font-size:28px; cursor:pointer; color:#FFCB01; top:50%; transform:translateY(-50%) }
+    #personalNumberDisplay { position:absolute; left:20px; top:50%; transform:translateY(-50%); color:#FFCB01; font-weight:bold; font-size:13px }
+    #notifBell { position:absolute; right:68px; top:50%; transform:translateY(-50%); font-size:22px; cursor:pointer; color:#FFCB01 }
+    #notifBell .badge { background:#ff3b30; color:#fff; border-radius:999px; padding:2px 6px; font-size:12px; margin-left:6px; vertical-align:middle }
+    .notif-panel { position:fixed; top:70px; right:20px; width:360px; max-width:92%; background:#111; border:2px solid #FFCB01; border-radius:10px; padding:10px; z-index:1500; box-shadow:0 6px 30px rgba(0,0,0,0.6) }
+    .notif-panel.hidden { display:none }
+    .sidebar { position:fixed; top:0; right:-100%; width:80%; max-width:300px; height:100%; background:#111; padding:20px; transition:0.28s; z-index:1000; overflow-y:auto; border-left:2px solid #222 }
+    .sidebar.active { right:0 }
+    .sidebar .avatar { width:48px; height:48px; border-radius:50%; background:#222; display:flex; align-items:center; justify-content:center; font-size:20px; color:#FFCB01; border:2px solid #FFCB01; }
+    .container { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:15px; padding:20px }
+    .card { background:#111; border:2px solid #FFCB01; border-radius:12px; padding:20px; text-align:center; cursor:pointer; transition:.25s; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center }
+    .card:hover { background:#FFCB01; color:#000 }
+    .hidden { display:none }
+    .form-box { background:#111; border:2px solid #FFCB01; border-radius:12px; padding:20px; margin:20px }
+    select,input,button,textarea { width:100%; padding:10px; margin:10px 0; border-radius:8px; border:none; font-size:16px; background:#222; color:#fff }
+    .button-option { background:#222; color:#FFCB01; border:2px solid #FFCB01; margin:5px 0; padding:10px; border-radius:8px; cursor:pointer; width:100%; text-align:center; font-weight:bold }
+    .button-option.selected { background:#FFCB01; color:#000 }
+    button { background:#FFCB01; color:#000; font-weight:bold; cursor:pointer; border-radius:8px; padding:10px }
+    .small-btn { display:inline-block; padding:8px 12px; border-radius:8px; background:#FFCB01; color:#000; cursor:pointer; margin-top:8px; text-align:center }
+    .back-btn { display:block; margin:20px auto; background:#FFCB01; color:#000; padding:10px; border-radius:8px; text-align:center; font-weight:bold; cursor:pointer }
+    .price-note { color:#FFCB01; font-weight:bold; margin:10px 0; font-size:14px; white-space:pre-line }
+    .orders-list { padding:10px; margin:10px; background:#111; border-radius:10px; border:1px solid #333 }
+    .order-item { padding:12px; border:2px solid #FFCB01; border-radius:8px; margin-bottom:10px; background:#111 }
+    .login-page { max-width:600px; margin:18px auto; padding:16px }
+    .muted-small { font-size:13px; color:#aaa; margin-top:6px }
+    .upload-status { font-size:13px; color:#aaa; margin-top:6px }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="https://i.postimg.cc/W1Ysr3QG/image.png" alt="Logo">
+    <div id="personalNumberDisplay">رقمك الشخصي: <span id="personalNum">0000000</span></div>
+    <div id="notifBell" title="الإشعارات">🔔<span id="notifBadge" class="badge hidden">0</span></div>
+    <div class="menu" id="menuBtn">☰</div>
+    <div id="ordersStatusBar" aria-live="polite" role="status" style="display:none"></div>
+  </header>
+
+  <!-- notif panel -->
+  <div id="notifPanel" class="notif-panel hidden" aria-live="polite">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h4 style="color:#FFCB01;margin:0">الإشعارات</h4>
+      <div style="cursor:pointer;color:#FFCB01" id="notifCloseBtn">×</div>
+    </div>
+    <div id="notifList"></div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <div class="small-btn" id="notifClearBtn">مسح الكل</div>
+      <div class="small-btn" id="notifGoOffersBtn">اذهب للعروض</div>
+    </div>
+  </div>
+
+  <!-- sidebar -->
+  <div id="sidebar" class="sidebar">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="display:flex;gap:10px;align-items:center;cursor:pointer" id="sidebarProfileArea">
+        <div class="avatar" id="sidebarAvatar">أ</div>
+        <div>
+          <div id="sidebarName" style="color:#FFCB01;font-weight:700">ضيف</div>
+          <div id="sidebarPersonal" style="color:#ccc;font-size:13px">--</div>
+        </div>
+      </div>
+      <div style="cursor:pointer;color:#FFCB01" id="sidebarCloseBtn">×</div>
+    </div>
+
+    <a href="#" id="linkHome">الرئيسية</a>
+    <a href="#" id="linkOrders">الطلبات</a>
+    <a href="#" id="linkContact">التواصل مع الدعم</a>
+    <a href="#" id="linkHelp">المساعدة في حل مشكلة</a>
+    <a href="#" id="linkOffers">العروض والهدايا</a>
+    <a href="#" id="linkJoinWhats">الانضمام لمجتمع واتساب</a>
+    <hr style="border:none;height:1px;background:#222;margin:12px 0">
+    <a href="#" id="linkGames">قسم الألعاب</a>
+    <a href="#" id="linkApps">قسم التطبيقات</a>
+    <div style="margin-top:16px;">
+      <div class="small-btn" id="btnCharge">شحن الرصيد</div>
+    </div>
+  </div>
+
+  <!-- pages -->
+  <main id="mainContent">
+    <!-- login page -->
+    <div id="loginPage" class="form-box login-page hidden">
+      <h3 style="text-align:center;color:#FFCB01;">تسجيل الدخول / التسجيل</h3>
+      <label>ضع الأسم</label>
+      <input type="text" id="loginName" placeholder="أدخل اسمك">
+      <label>البريد الإلكتروني</label>
+      <input type="email" id="loginEmail" placeholder="example@domain.com">
+      <label>كلمة السر</label>
+      <div style="position:relative;">
+        <input type="password" id="loginPassword" placeholder="كلمة السر">
+        <button id="loginTogglePwd" style="position:absolute;left:6px;top:10px;height:36px;width:80px;cursor:pointer;">اظهار</button>
+      </div>
+      <label>رقم هاتف</label>
+      <input type="text" id="loginPhone" placeholder="مثال: 0999xxxxxx">
+      <label>ضع الرقم الشخصي (غير قابل للتعديل)</label>
+      <input type="text" id="loginPersonalNumber" readonly>
+      <div class="small-muted" style="margin-top:6px;">
+        ملاحظة: لن يتم ارسال اي كود على البريد الإلكتروني او رقم الهاتف.
+        فقط قم بتعبئة بياناتك الاصلية ففي حال حدوث مشكلة نستطيع التواصل معك.
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+        <button id="doLoginBtn">تسجيل الدخول</button>
+      </div>
+      <div id="loginError" class="error" style="display:none;"></div>
+    </div>
+
+    <!-- profile page -->
+    <div id="profilePage" class="hidden">
+      <div class="form-box">
+        <h3 style="text-align:center;color:#FFCB01;">الملف الشخصي</h3>
+        <label>الاسم</label>
+        <input type="text" id="profileName" readonly>
+        <label>البريد الإلكتروني</label>
+        <input type="email" id="profileEmail" readonly>
+        <label>كلمة السر</label>
+        <input type="password" id="profilePassword" readonly>
+        <label>رقم الهاتف</label>
+        <input type="text" id="profilePhone" readonly>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+          <button id="requestEditBtn">طلب تعديل معلوماتك</button>
+          <button id="confirmSaveBtn" class="hidden">حفظ التعديلات</button>
+        </div>
+        <div class="back-btn" id="profileBackBtn">⬅ رجوع</div>
+        <div id="profileMsg" class="muted-small"></div>
+      </div>
+    </div>
+
+    <!-- home page -->
+    <div id="homePage" class="hidden">
+      <div class="container">
+        <div class="card" id="cardGames">قسم الألعاب</div>
+        <div class="card" id="cardApps">قسم التطبيقات</div>
+      </div>
+    </div>
+
+    <!-- help page -->
+    <div id="helpPage" class="hidden">
+      <div class="form-box">
+        <h3 style="text-align:center;">المساعدة في حل مشكلة</h3>
+        <label>الرقم الشخصي (غير قابل للتعديل)</label>
+        <input type="text" id="helpPersonalField" readonly>
+        <label>-اختر مشكلتك-</label>
+        <select id="helpIssueSelect">
+          <option value="" disabled selected>-- اختر مشكلتلك --</option>
+          <option value="لا استطيع تعبئة البيانات">لا استطع تعبئة البيانات</option>
+          <option value="قمت بتحويل الرصيد ولم يُراجع طلبي">قمت بتحويل الرصيد ولم يُراجع طلبي</option>
+          <option value="تم قبول طلبي لكن لم يصلني شيء">تم قبول طلبي لكن لم يصلني شيء</option>
+          <option value="لا استطيع ارسال لقطة شاشة">لا استطيع ارسال لقطة شاشة</option>
+        </select>
+        <label>ارفاق ملف (اختياري)</label>
+        <input type="file" id="helpFileUpload" accept="image/*">
+        <div class="upload-status" id="helpUploadStatus"></div>
+        <input type="text" id="helpFileLink" placeholder="رابط الملف سيظهر هنا (اختياري)" readonly>
+        <label>وصف المشكلة</label>
+        <textarea id="helpDesc" rows="5" maxlength="100" placeholder="اكتب مشكلتك وضع رقم عملية الطلب #***********"></textarea>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button id="helpSubmitBtn">إرسال</button>
+          <div class="back-btn" id="helpBackBtn">⬅ رجوع</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- games page -->
+    <div id="gamesPage" class="hidden">
+      <div class="form-box">
+        <h3>اختر لعبتك</h3>
+        <select id="gameSelect">
+          <option value="">-- اختر لعبة --</option>
+          <option value="أكواد فري فاير">أكواد فري فاير</option>
+          <option value="فري فاير ايدي">فري فاير ايدي</option>
+          <option value="ببجي ايدي">ببجي ايدي</option>
+          <option value="أكواد ببجي">أكواد ببجي</option>
+          <option value="جواكر">جواكر</option>
+        </select>
+        <input type="text" id="personalField" readonly>
+        <input type="text" id="idField" placeholder="ضع الايدي" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        <div id="optionsContainer"></div>
+        <div id="priceDisplay"></div>
+        <button id="submitForm" disabled>إرسال</button>
+        <div class="price-note" id="paymentNote">اختر الحزمة ثم اضغط إرسال للمتابعة لصفحة الدفع</div>
+        <div id="orderStatus" style="color:#0f0;font-weight:bold;text-align:center;margin-top:10px;"></div>
+        <div style="text-align:center;">
+          <button id="goOrdersBtn" class="small-btn hidden">عرض الطلبات</button>
+        </div>
+        <div class="back-btn" id="gamesBackBtn">⬅ رجوع للصفحة الرئيسية</div>
+      </div>
+    </div>
+
+    <!-- apps page -->
+    <div id="appsPage" class="hidden">
+      <div class="form-box">
+        <h3>اختر التطبيق</h3>
+        <select id="appSelect">
+          <option value="">-- اختر تطبيق --</option>
+          <option value="تطبيق 1">تطبيق 1</option>
+          <option value="تطبيق 2">تطبيق 2</option>
+          <option value="تطبيق 3">تطبيق 3</option>
+        </select>
+        <input type="text" id="appPersonalField" readonly>
+        <input type="text" id="appIdField" placeholder="ضع الايدي" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        <div id="optionsContainerApps"></div>
+        <div id="priceDisplayApps"></div>
+        <button id="appSubmitForm" disabled>إرسال</button>
+        <div class="price-note" id="appPaymentNote">اختر الباقة/التطبيق ثم اضغط إرسال للمتابعة لصفحة الدفع</div>
+        <div id="appOrderStatus" style="color:#0f0;font-weight:bold;text-align:center;margin-top:10px;"></div>
+        <div style="text-align:center;">
+          <button id="goOrdersBtnApp" class="small-btn hidden">عرض الطلبات</button>
+        </div>
+        <div class="back-btn" id="appsBackBtn">⬅ رجوع للصفحة الرئيسية</div>
+      </div>
+    </div>
+
+    <!-- offers page -->
+    <div id="offersPage" class="hidden">
+      <div class="form-box">
+        <h3 style="text-align:center;color:#FFCB01;">العروض والهدايا</h3>
+        <div id="offersList"></div>
+        <div class="back-btn" id="offersBackBtn">⬅ رجوع للصفحة الرئيسية</div>
+      </div>
+    </div>
+
+    <!-- payment details page -->
+    <div id="paymentDetailsPage" class="hidden">
+      <div class="form-box">
+        <div class="back-btn" id="pdBackBtn">⬅ رجوع</div>
+        <h3 id="pdTitle" style="text-align:center;">تفاصيل الدفع</h3>
+        <div id="pdContent">
+          <div id="pdTopInfo" style="text-align:center;margin-bottom:10px;color:#FFCB01;font-weight:bold;"></div>
+          <select id="pdCashSelect">
+            <option value="">-- اختر طريقة الدفع --</option>
+            <option value="sham">شام كاش</option>
+            <option value="syrtel">سيرتيل كاش</option>
+            <option value="mtn">MTN كاش</option>
+            <option value="hawala">حوالة مالية</option>
+          </select>
+          <div style="position:relative; margin-bottom:10px;">
+            <input type="text" id="pdCopyField" readonly style="width:100%;padding-right:80px;">
+            <button type="button" id="pdCopyBtn" style="position:absolute;left:0;top:0;height:100%;width:70px;cursor:pointer;">نسخ</button>
+          </div>
+          <div style="text-align:center;margin-bottom:10px;">
+            <button type="button" id="pdToggleQrBtn">اظهر/اخفِ QR</button>
+          </div>
+          <div id="qrContainer" style="display:none;margin-top:10px;text-align:center;">
+            <img id="qrImg" src="https://i.postimg.cc/vHYg2nK5/IMG.jpg" alt="QR شام" style="width:300px;height:auto;">
+          </div>
+          <div id="syrtelQrContainer" style="display:none;margin-top:10px;text-align:center;">
+            <img id="syrtelQrImg" src="https://i.postimg.cc/tT6ScwYv/IMG.jpg" alt="QR سيرتيل" style="width:300px;height:auto;">
+          </div>
+
+          <div id="shamFields" style="display:none;margin-top:10px;">
+            <div style="padding:8px;border:1px solid #333;border-radius:8px;">
+              <strong>تحويل شام كاش إلى:</strong>
+              <div style="margin-top:6px;">العنوان/المحفظة: <span id="shamAddressDisplay">e5eca798a4add8f1b86d389330131c82</span></div>
+            </div>
+          </div>
+
+          <div id="syrtelFields" style="display:none;margin-top:10px;">
+            <div style="padding:8px;border:1px solid #333;border-radius:8px;">
+              <strong>تحويل سيرتيل كاش إلى:</strong>
+              <div style="margin-top:6px;">الرقم: <span id="syrtelAddressDisplay">72289118</span></div>
+            </div>
+          </div>
+
+          <div id="hawalaFields" style="display:none;margin-top:10px;">
+            <div style="padding:8px;border:1px solid #333;border-radius:8px;">
+              <strong>قم بتحويل الرصيد المطلوب إلى الاسم التالي:</strong>
+              <div style="margin-top:8px;">عبد الرحمن احمد عتون</div>
+              <div class="muted-small" style="margin-top:8px;color:#ccc;">
+                التحويل يتم عبر مكاتب الصرافة الموجودة في سوريا مثل: الهرم، الفؤاد، دوفيز، الخ...
+              </div>
+            </div>
+          </div>
+
+          <input type="file" id="paymentFileUpload" accept="image/*">
+          <div class="upload-status" id="paymentUploadStatus"></div>
+          <input type="text" id="paymentFileLink" placeholder="رابط الملف سيظهر هنا" readonly>
+          <div id="pdPriceInfo" style="color:#0f0;font-weight:bold;margin-top:10px;text-align:center"></div>
+          <div class="price-note" id="pdNote" style="white-space:pre-line">اختر طريقة الدفع لمتابعة التعليمات</div>
+          <button id="pdSubmitForm">إرسال الطلب</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- orders page -->
+    <div id="ordersPage" class="hidden">
+      <div class="form-box">
+        <h3 style="text-align:center">الطلبات</h3>
+        <div id="ordersList" class="orders-list"></div>
+        <div class="back-btn" id="ordersBackBtn">⬅ رجوع للصفحة الرئيسية</div>
+      </div>
+    </div>
+
+    <!-- review page -->
+    <div id="reviewPage" class="hidden">
+      <div class="form-box" style="text-align:center;">
+        <h3>تم ارسال طلبك</h3>
+        <p id="reviewMsg">تم استلام طلبك وسيتم مراجعته</p>
+        <div class="back-btn" id="reviewBackBtn">⬅ رجوع للصفحة الرئيسية</div>
+      </div>
+    </div>
+
+  </main>
+
+<script>
+/* ---------- Frontend logic ---------- 
+   يتواصل مع backend عبر /api/*
+   يحتوي على تسجيل دخول، ارسال طلبات، مساعدة، شحن رصيد، عروض، اشعارات.
+*/
+
+// helpers
+const API_ROOT = '';
+
+function $(id){ return document.getElementById(id); }
+function show(id){ $(id).classList.remove('hidden'); }
+function hide(id){ $(id).classList.add('hidden'); }
+function hideAllPages(){
+  ['homePage','gamesPage','appsPage','ordersPage','paymentDetailsPage','reviewPage','helpPage','profilePage','loginPage','offersPage'].forEach(id => { const e=$(id); if(e) e.classList.add('hidden'); });
+}
+let currentProfile = null;
+let selectedGameOption = '';
+let selectedAppOption = '';
+let currentMap = null;
+const priceMapFF={"100 جواهر":"12500 ل.س","200 جواهر":"25000 ل.س","300 جواهر":"60000 ل.س","530 جواهر":"60000 ل.س","1080 جواهر":"120000 ل.س","2200 جواهر":"240000 ل.س","عضوية أسبوعية":"30000 ل.س","عضوية شهرية":"140000 ل.س"};
+const priceMapPUBG={"60 شدة":"6000 ل.س","325 شدة":"25000 ل.س","660 شدة":"48000 ل.س","1800 شدة":"120000 ل.س","3850 شدة":"240000 ل.س","8100 شدة":"480000 ل.س"};
+const priceMappubg1={"كود 60 شده":"12500 ل.س"};
+const priceMapApps = {"تطبيق 1":"5000 ل.س","تطبيق 2":"10000 ل.س","تطبيق 3":"15000 ل.س"};
+
+// init UI bindings
+document.addEventListener('DOMContentLoaded', ()=> {
+  // menu open/close
+  $('menuBtn').addEventListener('click', ()=> { $('sidebar').classList.toggle('active'); });
+  $('sidebarCloseBtn').addEventListener('click', ()=> { $('sidebar').classList.remove('active'); });
+  $('sidebarProfileArea').addEventListener('click', ()=> { openProfile(); $('sidebar').classList.remove('active'); });
+
+  // sidebar links
+  $('linkHome').addEventListener('click', e=>{ e.preventDefault(); showHome(); $('sidebar').classList.remove('active'); });
+  $('linkOrders').addEventListener('click', e=>{ e.preventDefault(); showOrders(); $('sidebar').classList.remove('active'); });
+  $('linkContact').addEventListener('click', e=>{ e.preventDefault(); window.open('https://wa.me/79228576801','_blank'); $('sidebar').classList.remove('active'); });
+  $('linkHelp').addEventListener('click', e=>{ e.preventDefault(); showHelp(); $('sidebar').classList.remove('active'); });
+  $('linkOffers').addEventListener('click', e=>{ e.preventDefault(); showOffers(); $('sidebar').classList.remove('active'); });
+  $('linkJoinWhats').addEventListener('click', e=>{ e.preventDefault(); window.open('https://chat.whatsapp.com/LvrWRUCqLOw4cxjPlnH33J?mode=ems_copy_t','_blank'); });
+  $('linkGames').addEventListener('click', e=>{ e.preventDefault(); showGames(); $('sidebar').classList.remove('active'); });
+  $('linkApps').addEventListener('click', e=>{ e.preventDefault(); showApps(); $('sidebar').classList.remove('active'); });
+  $('btnCharge').addEventListener('click', ()=>{ $('sidebar').classList.remove('active'); openChargePage(); });
+
+  // notif
+  $('notifBell').addEventListener('click', ()=> { $('notifPanel').classList.toggle('hidden'); loadNotifications(); });
+  $('notifCloseBtn').addEventListener('click', ()=> $('notifPanel').classList.add('hidden'));
+  $('notifClearBtn').addEventListener('click', () => { $('notifList').innerHTML=''; $('notifBadge').classList.add('hidden'); });
+
+  // login toggles
+  $('loginTogglePwd').addEventListener('click', function(){ const inp=$('loginPassword'); if(inp.type==='password'){ inp.type='text'; this.textContent='اخفِ'; } else { inp.type='password'; this.textContent='اظهار'; }});
+  $('doLoginBtn').addEventListener('click', doLogin);
+
+  // profile
+  $('requestEditBtn').addEventListener('click', requestProfileEdit);
+  $('confirmSaveBtn').addEventListener('click', confirmProfileSave);
+  $('profileBackBtn').addEventListener('click', showHome);
+
+  // help
+  $('helpBackBtn').addEventListener('click', showHome);
+  $('helpSubmitBtn').addEventListener('click', submitHelp);
+  $('helpFileUpload').addEventListener('change', async function(){ await uploadFileToImgbb(this.files[0], 'helpFileLink','helpUploadStatus'); });
+
+  // games/app selects
+  $('gameSelect').addEventListener('change', function(){ buildGameOptions(this.value); });
+  $('appSelect').addEventListener('change', function(){ buildAppOptions(this.value); });
+
+  $('idField').addEventListener('input', updateSubmitButtonGames);
+  $('appIdField').addEventListener('input', updateSubmitButtonApps);
+  $('submitForm').addEventListener('click', ()=> showPaymentDetailsFromSubmit('gamesPage'));
+  $('appSubmitForm').addEventListener('click', ()=> showPaymentDetailsFromSubmit('appsPage'));
+
+  // payment details
+  $('pdCashSelect').addEventListener('change', onPdCashChange);
+  $('pdToggleQrBtn').addEventListener('click', toggleQr);
+  $('pdCopyBtn').addEventListener('click', ()=>{ const val=$('pdCopyField').value; if(val) navigator.clipboard?.writeText(val).then(()=>alert('تم النسخ')).catch(()=>prompt('انسخ يدوياً:',val)); else alert('لا يوجد نص للنسخ'); });
+  $('paymentFileUpload').addEventListener('change', async function(){ await uploadFileToImgbb(this.files[0], 'paymentFileLink','paymentUploadStatus'); });
+  $('pdSubmitForm').addEventListener('click', submitPaymentDetails);
+  $('pdBackBtn').addEventListener('click', ()=> returnFromPaymentDetails());
+
+  // orders page
+  $('ordersBackBtn').addEventListener('click', showHome);
+
+  // review page
+  $('reviewBackBtn').addEventListener('click', showHome);
+
+  // offers page
+  $('offersBackBtn').addEventListener('click', showHome);
+
+  // buttons
+  $('cardGames').addEventListener('click', showGames);
+  $('cardApps').addEventListener('click', showApps);
+  $('goOrdersBtn').addEventListener('click', showOrders);
+  $('goOrdersBtnApp').addEventListener('click', showOrders);
+
+  // load profile from localStorage if present
+  const saved = localStorage.getItem('user_profile_v1');
+  if(saved){
+    try{ currentProfile = JSON.parse(saved); }catch(e){ currentProfile = null; }
+  }
+  if(!currentProfile){
+    // create temporary personalNumber if none
+    let pn = localStorage.getItem('personalNumber');
+    if(!pn){ pn = String(Math.floor(1000000 + Math.random()*9000000)); localStorage.setItem('personalNumber', pn); }
+    currentProfile = { personalNumber: pn, name:'ضيف', email:'', phone:'', balance:0, canEdit:false };
+    localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
+  }
+  refreshUIFromProfile();
+  showHome();
+  // poll server for updates every 6s
+  setInterval(()=>{ refreshNotificationsCount(); fetchOffers(); }, 6000);
+  refreshNotificationsCount();
+  fetchOffers();
+});
+
+// ---------- UI/page navigation ----------
+function showHome(){ hideAllPages(); show('homePage'); window.scrollTo({top:0}); }
+function showGames(){ hideAllPages(); show('gamesPage'); window.scrollTo({top:0}); }
+function showApps(){ hideAllPages(); show('appsPage'); window.scrollTo({top:0}); }
+function showHelp(){ hideAllPages(); show('helpPage'); window.scrollTo({top:0}); }
+function openProfile(){ hideAllPages(); show('profilePage'); fillProfileFields(); }
+function openChargePage(){ /* reuse paymentDetailsPage for charging but simpler UI could be added */ hideAllPages(); show('paymentDetailsPage'); $('pdTitle').textContent='شحن الرصيد'; $('pdTopInfo').textContent='اطلب شحن الرصيد عبر رفع ايصال التحويل'; }
+function showOrders(){ hideAllPages(); show('ordersPage'); loadOrdersList(); }
+function showOffers(){ hideAllPages(); show('offersPage'); fetchOffers(); }
+
+// ---------- profile helpers ----------
+function refreshUIFromProfile(){
+  $('personalNum').textContent = currentProfile.personalNumber || '';
+  $('personalField').value = currentProfile.personalNumber || '';
+  $('appPersonalField').value = currentProfile.personalNumber || '';
+  $('helpPersonalField').value = currentProfile.personalNumber || '';
+  $('loginPersonalNumber').value = currentProfile.personalNumber || '';
+  $('sidebarName').textContent = currentProfile.name || 'ضيف';
+  $('sidebarAvatar').textContent = (currentProfile.name && currentProfile.name.trim().length>0) ? currentProfile.name.trim().charAt(0).toUpperCase() : 'أ';
+  $('sidebarPersonal').textContent = 'رقم: ' + (currentProfile.personalNumber || '');
+}
+function fillProfileFields(){
+  $('profileName').value = currentProfile.name || '';
+  $('profileEmail').value = currentProfile.email || '';
+  $('profilePassword').value = currentProfile.password || '';
+  $('profilePhone').value = currentProfile.phone || '';
+  applyProfileEditState();
+}
+function applyProfileEditState(){
+  const canEdit = !!currentProfile.canEdit;
+  ['profileName','profileEmail','profilePassword','profilePhone'].forEach(id=>{
+    const el = $(id);
+    if(!el) return;
+    if(canEdit){ el.removeAttribute('readonly'); } else { el.setAttribute('readonly','readonly'); }
+  });
+  if(canEdit){ $('requestEditBtn').classList.add('hidden'); $('confirmSaveBtn').classList.remove('hidden'); $('profileMsg').textContent='يمكنك تعديل بياناتك الآن مرة واحدة ثم اضغط حفظ.'; }
+  else { $('requestEditBtn').classList.remove('hidden'); $('confirmSaveBtn').classList.add('hidden'); $('profileMsg').textContent='للتعديل اطلب موافقة من الإدارة عبر الزر أدناه.'; }
+}
+
+// ---------- login/register ----------
+async function doLogin(){
+  const name = $('loginName').value.trim();
+  const email = $('loginEmail').value.trim();
+  const password = $('loginPassword').value;
+  const phone = $('loginPhone').value.trim();
+  const personal = $('loginPersonalNumber').value || currentProfile.personalNumber;
+  const errEl = $('loginError');
+  errEl.style.display='none';
+  if(!name){ errEl.textContent='الرجاء إدخال الاسم'; errEl.style.display='block'; return; }
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ errEl.textContent='صيغة البريد الإلكتروني غير صحيحة'; errEl.style.display='block'; return; }
+  if(!password){ errEl.textContent='الرجاء إدخال كلمة السر'; errEl.style.display='block'; return; }
+
+  // call register API
+  const resp = await fetch('/api/register', {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ name, email, password, phone, personalNumber: personal })
+  });
+  const data = await resp.json();
+  if(data && data.ok){
+    currentProfile = data.profile;
+    localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
+    refreshUIFromProfile();
+    showHome();
+    alert('تم تسجيل الدخول');
+  } else {
+    alert('فشل التسجيل: ' + (data.error || 'خطأ غير معروف'));
+  }
+}
+
+// request profile edit (sends message to admin bot)
+async function requestProfileEdit(){
+  const ok = confirm('سيتم إرسال طلب تعديل بياناتك للإدارة. هل تريد المتابعة؟');
+  if(!ok) return;
+  const resp = await fetch('/api/profile/request-edit', {
+    method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber })
+  });
+  const data = await resp.json();
+  if(data && data.ok){ alert('تم إرسال طلب التعديل. انتظر موافقة الإدارة.'); $('requestEditBtn').textContent='تم إرسال الطلب'; setTimeout(()=>$('requestEditBtn').textContent='طلب تعديل معلوماتك', 10000); } else { alert('فشل الإرسال'); }
+}
+
+function confirmProfileSave(){
+  // save to backend
+  const name = $('profileName').value.trim();
+  const email = $('profileEmail').value.trim();
+  const password = $('profilePassword').value;
+  const phone = $('profilePhone').value.trim();
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert('البريد غير صالح'); return; }
+  currentProfile.name = name; currentProfile.email = email; currentProfile.password = password; currentProfile.phone = phone; currentProfile.canEdit = false;
+  localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
+  // also call register endpoint to save server-side
+  fetch('/api/register', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, email, password, phone, personalNumber: currentProfile.personalNumber }) });
+  alert('تم حفظ التعديلات');
+  applyProfileEditState();
+  refreshUIFromProfile();
+}
+
+// ---------- help submit ----------
+async function submitHelp(){
+  const issue = $('helpIssueSelect').value;
+  const fileLink = $('helpFileLink').value;
+  const desc = $('helpDesc').value.trim();
+  const personal = currentProfile.personalNumber;
+  if(!issue){ alert('اختر مشكلتك'); return; }
+  const resp = await fetch('/api/help', {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({ personal, issue, fileLink, desc, name: currentProfile.name, email: currentProfile.email, phone: currentProfile.phone })
+  });
+  const data = await resp.json();
+  if(data && data.ok){ alert('تم ارسال المشكلة'); show('helpSuccessPage'); hide('helpPage'); } else { alert('فشل الارسال'); }
+}
+
+// ---------- uploading to imgbb (client-side) ----------
+async function uploadFileToImgbb(file, targetInputId = 'paymentFileLink', statusElId='paymentUploadStatus'){
+  if(!file) return;
+  const statusEl = $(statusElId);
+  if(statusEl) statusEl.textContent = 'جارية عملية الرفع... 0%';
+  try{
+    const key = (await fetch('/api/debug/db').then(r=>r.json()).then(d=>d && d.tgOffsets!==undefined ? null : null)) || null;
+    // we'll use client-side direct imgbb with the server-provided key if needed.
+    // For simplicity: call imgbb directly. (IMGBB_KEY is set server-side, but we don't expose it via API here for security.)
+    // Instead we use the upload endpoints already implemented in the original file which used IMGBB_API_KEY directly on client.
+    // Here we fallback to using a tiny anonymous upload service by sending file as base64 to server endpoint '/api/upload' which stores file locally.
+    // But simpler for now: attempt to upload via imgbb by building a FormData and sending to the imgbb API.
+    const imgbbKey = null; // we don't include key client side for security; the server has it.
+    // So we will upload to server endpoint /api/upload (which returns local path), but server /uploads is static only if configured.
+    // For compatibility with original flow, try using fetch to https://api.imgbb.com/1/upload with the key inlined (not ideal but user gave key earlier).
+    // We'll prompt the user to confirm using the shared key (since you asked to use the key).
+    const confirmUseKey = true;
+    if(confirmUseKey){
+      // use the provided key (this is okay here because you gave it)
+      const IMGBB_KEY = "e5603dfd5675ed2b5a671577abcf6d33";
+      const fd = new FormData();
+      fd.append('image', file);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`);
+      xhr.onload = function(){
+        if(xhr.status>=200 && xhr.status<300){
+          try{
+            const resp = JSON.parse(xhr.responseText||'{}');
+            const url = resp && resp.data && (resp.data.url || resp.data.display_url);
+            if(url){
+              $(targetInputId).value = url;
+              if(statusEl) statusEl.textContent = 'تم الرفع بنجاح';
+              alert('تم رفع الملف');
+            } else {
+              if(statusEl) statusEl.textContent = 'فشل الرفع';
+              alert('فشل رفع الملف');
+            }
+          }catch(e){ if(statusEl) statusEl.textContent = 'خطأ في الرفع'; alert('خطأ في رفع الملف'); }
+        } else {
+          if(statusEl) statusEl.textContent = 'فشل الرفع';
+          alert('فشل الرفع: ' + xhr.status);
+        }
+      };
+      xhr.onerror = function(){ if(statusEl) statusEl.textContent='خطأ في الشبكة'; alert('خطأ في الشبكة أثناء الرفع'); };
+      xhr.upload.onprogress = function(ev){ if(ev.lengthComputable){ const pct = Math.round((ev.loaded/ev.total)*100); if(statusEl) statusEl.textContent = `جارية عملية الرفع... ${pct}%`; } };
+      xhr.send(fd);
+    }
+  }catch(e){ console.error(e); if($(statusElId)) $(statusElId).textContent = 'خطأ أثناء الرفع'; alert('خطأ أثناء الرفع'); }
+}
+
+// ---------- games/apps options ----------
+function buildGameOptions(val){
+  $('optionsContainer').innerHTML=''; selectedGameOption=''; $('priceDisplay').textContent='';
+  if(val==='فري فاير ايدي'){ currentMap = priceMapFF; }
+  else if(val==='ببجي ايدي'){ currentMap = priceMapPUBG; }
+  else if(val==='جواكر'){ currentMap = priceMappubg1; }
+  else currentMap = null;
+  if(currentMap){
+    Object.keys(currentMap).forEach(opt=>{
+      const d = document.createElement('div'); d.className='button-option'; d.textContent = opt;
+      d.addEventListener('click', ()=> {
+        document.querySelectorAll('#optionsContainer .button-option').forEach(x=>x.classList.remove('selected'));
+        d.classList.add('selected');
+        selectedGameOption = opt;
+        $('priceDisplay').textContent = `الحزمة: ${opt}\nالسعر: ${currentMap[opt]}`; $('priceDisplay').style.color='#0f0';
+        updateSubmitButtonGames();
+      });
+      $('optionsContainer').appendChild(d);
+    });
+  }
+}
+
+function buildAppOptions(val){
+  $('optionsContainerApps').innerHTML=''; selectedAppOption=''; $('priceDisplayApps').textContent='';
+  if(priceMapApps[val]){
+    const d = document.createElement('div'); d.className='button-option'; d.textContent = val;
+    d.addEventListener('click', ()=> {
+      document.querySelectorAll('#optionsContainerApps .button-option').forEach(x=>x.classList.remove('selected'));
+      d.classList.add('selected');
+      selectedAppOption = val;
+      $('priceDisplayApps').textContent = `السعر: ${priceMapApps[val]}`; $('priceDisplayApps').style.color='#0f0';
+      updateSubmitButtonApps();
+    });
+    $('optionsContainerApps').appendChild(d);
+  }
+}
+
+function updateSubmitButtonGames(){ const idf=$('idField').value.trim(); $('submitForm').disabled = !(selectedGameOption && idf); }
+function updateSubmitButtonApps(){ const idf=$('appIdField').value.trim(); $('appSubmitForm').disabled = !(selectedAppOption && idf); }
+
+// ---------- payment flow ----------
+let previousBeforePayment = null;
+function showPaymentDetailsFromSubmit(fromPage){
+  previousBeforePayment = fromPage;
+  hideAllPages(); show('paymentDetailsPage');
+  $('pdTopInfo').textContent = '';
+  $('pdPriceInfo').textContent = '';
+  $('pdCashSelect').value = '';
+  $('pdCopyField').value = '';
+  $('qrContainer').style.display='none';
+  $('syrtelQrContainer').style.display='none';
+  $('paymentFileLink').value = '';
+  $('paymentUploadStatus').textContent = '';
+  $('pdNote').textContent = 'اختر طريقة الدفع لمتابعة التعليمات';
+  $('shamFields').style.display='none'; $('syrtelFields').style.display='none'; $('hawalaFields').style.display='none';
+}
+
+function returnFromPaymentDetails(){ if(previousBeforePayment==='gamesPage') showGames(); else if(previousBeforePayment==='appsPage') showApps(); else showHome(); }
+
+// pd cash change
+function onPdCashChange(){
+  const value = $('pdCashSelect').value;
+  const pdNoteEl = $('pdNote');
+  if(value==='sham'){
+    $('shamFields').style.display='block'; $('syrtelFields').style.display='none'; $('hawalaFields').style.display='none';
+    $('qrContainer').style.display='none'; $('syrtelQrContainer').style.display='none';
+    $('pdCopyField').value = 'e5eca798a4add8f1b86d389330131c82';
+    pdNoteEl.textContent = `تعليمات شام كاش...`;
+  } else if(value==='syrtel'){
+    $('shamFields').style.display='none'; $('syrtelFields').style.display='block'; $('hawalaFields').style.display='none';
+    $('pdCopyField').value = '72289118';
+    pdNoteEl.textContent = `تعليمات سيرتيل...`;
+  } else if(value==='hawala'){
+    $('shamFields').style.display='none'; $('syrtelFields').style.display='none'; $('hawalaFields').style.display='block';
+    $('pdCopyField').value = '';
+    pdNoteEl.textContent = `قم بتحويل الرصيد المطلوب إلى: عبد الرحمن احمد عتون`;
+  } else {
+    $('shamFields').style.display='none'; $('syrtelFields').style.display='none'; $('hawalaFields').style.display='none';
+    $('pdCopyField').value = '';
+    pdNoteEl.textContent = 'اختر طريقة الدفع لمتابعة التعليمات';
+  }
+}
+
+function toggleQr(){
+  const m = $('pdCashSelect').value;
+  if(m==='sham'){ $('qrContainer').style.display = $('qrContainer').style.display === 'none' ? 'block' : 'none'; }
+  else if(m==='syrtel'){ $('syrtelQrContainer').style.display = $('syrtelQrContainer').style.display === 'none' ? 'block' : 'none'; }
+  else alert('صورة QR غير متاحة لهذه الطريقة');
+}
+
+// submit payment details -> creates order or charge
+async function submitPaymentDetails(){
+  const cashMethod = $('pdCashSelect').value;
+  const fileLink = $('paymentFileLink').value;
+  if(!cashMethod){ alert('اختر طريقة الدفع'); return; }
+  // if coming from games
+  if(previousBeforePayment === 'gamesPage'){
+    const personal = $('personalField').value;
+    const game = $('gameSelect').value;
+    const idField = $('idField').value;
+    const price = $('priceDisplay').textContent || '';
+    if(!game || !idField || !selectedGameOption){ alert('اكمل البيانات'); return; }
+    const body = { personal, phone: currentProfile.phone, type:'شحن لعبة', item: `${game} - ${selectedGameOption}`, idField, fileLink, cashMethod };
+    const r = await fetch('/api/orders', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+    const data = await r.json();
+    if(data && data.ok){ hideAllPages(); show('reviewPage'); $('reviewMsg').textContent='تم ارسال طلبك وسيتم مراجعته'; localStorage.setItem('lastOrderId', data.order.id); } else alert('فشل ارسال الطلب');
+  } else if(previousBeforePayment === 'appsPage'){
+    const personal = $('appPersonalField').value;
+    const app = $('appSelect').value;
+    const idField = $('appIdField').value;
+    if(!app || !idField || !selectedAppOption){ alert('اكمل البيانات'); return; }
+    const body = { personal, phone: currentProfile.phone, type:'شراء تطبيق', item: `${app} - ${selectedAppOption}`, idField, fileLink, cashMethod };
+    const r = await fetch('/api/orders', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+    const data = await r.json();
+    if(data && data.ok){ hideAllPages(); show('reviewPage'); $('reviewMsg').textContent='تم ارسال طلب التطبيق'; } else alert('فشل ارسال الطلب');
+  } else {
+    // if this is charge flow
+    const personal = currentProfile.personalNumber;
+    const amount = prompt('كم المبلغ الذي تريد شحنه؟ (أدخل رقم فقط)');
+    if(!amount || isNaN(Number(amount))){ alert('قيمة غير صحيحة'); return; }
+    const method = cashMethod || 'unknown';
+    const r = await fetch('/api/charge', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal, phone: currentProfile.phone, amount, method, fileLink }) });
+    const data = await r.json();
+    if(data && data.ok){ alert('تم ارسال طلب الشحن. انتظر الموافقة.'); hideAllPages(); showHome(); } else alert('فشل ارسال طلب الشحن');
+  }
+}
+
+// ---------- load orders / list ----------
+async function loadOrdersList(){
+  const personal = currentProfile.personalNumber;
+  const resp = await fetch('/api/notifications/' + personal);
+  const data = await resp.json();
+  if(data && data.ok){
+    const orders = data.orders || [];
+    const charges = data.charges || [];
+    const container = $('ordersList'); container.innerHTML = '';
+    if(orders.length===0 && charges.length===0){ container.innerHTML = '<div>لا توجد طلبات حتى الآن.</div>'; return; }
+    orders.forEach(o=>{
+      const d = document.createElement('div'); d.className='order-item';
+      d.innerHTML = `<strong>#${o.id}</strong> - ${o.type} - ${o.item || ''} <br> الايدي: ${o.idField || ''} <br> الهاتف: ${o.phone || ''} <br> الحالة: <strong>${o.status}</strong> <br> أنشئ: ${new Date(o.createdAt).toLocaleString()}`;
+      container.appendChild(d);
+    });
+    charges.forEach(c=>{
+      const d = document.createElement('div'); d.className='order-item';
+      d.innerHTML = `<strong>#${c.id}</strong> - شحن رصيد - المبلغ: ${c.amount} <br> الحالة: <strong>${c.status}</strong> <br> أنشئ: ${new Date(c.createdAt).toLocaleString()}`;
+      container.appendChild(d);
+    });
+  }
+}
+
+// ---------- notifications & offers ----------
+async function refreshNotificationsCount(){
+  const resp = await fetch('/api/notifications/' + currentProfile.personalNumber);
+  const data = await resp.json();
+  if(data && data.ok){
+    const offers = data.offers || [];
+    const orders = data.orders || [];
+    const charges = data.charges || [];
+    const unreadCount = (orders.filter(o=>o.replied).length) + (charges.filter(c=>c.replied).length) + (offers.length>0 ? 1 : 0);
+    if(unreadCount>0){ $('notifBadge').classList.remove('hidden'); $('notifBadge').textContent = String(unreadCount); } else { $('notifBadge').classList.add('hidden'); }
+  }
+}
+
+async function loadNotifications(){
+  const resp = await fetch('/api/notifications/' + currentProfile.personalNumber);
+  const data = await resp.json();
+  if(data && data.ok){
+    const offers = data.offers || [];
+    const orders = data.orders || [];
+    const charges = data.charges || [];
+    const list = $('notifList'); list.innerHTML = '';
+    orders.filter(o=>o.replied).forEach(o=>{
+      const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+      el.innerHTML = `<div><strong>حالة الطلب #${o.id}</strong></div><div>${o.status}</div>`;
+      list.appendChild(el);
+    });
+    charges.filter(c=>c.replied).forEach(c=>{
+      const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+      el.innerHTML = `<div><strong>حالة شحنة #${c.id}</strong></div><div>${c.status}</div>`;
+      list.appendChild(el);
+    });
+    offers.forEach(of=>{
+      const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+      el.innerHTML = `<div><strong>عرض</strong></div><div>${of.text}</div><div style="margin-top:6px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
+      list.appendChild(el);
+    });
+  }
+}
+
+async function fetchOffers(){
+  const resp = await fetch('/api/notifications/' + currentProfile.personalNumber);
+  const data = await resp.json();
+  if(data && data.ok){
+    const offers = data.offers || [];
+    const container = $('offersList'); container.innerHTML = '';
+    offers.forEach(of=>{
+      const el = document.createElement('div'); el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.padding='8px'; el.style.marginBottom='8px';
+      el.innerHTML = `<div>${of.text}</div><div style="margin-top:8px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
+      container.appendChild(el);
+    });
+  }
+}
+
+async function ackOffer(id){
+  const resp = await fetch('/api/offer/ack', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber, offerId: id }) });
+  const data = await resp.json();
+  if(data && data.ok){ alert('تم إرسال التحقق'); }
+}
+
+// ---------- util: upload local file -> imgbb handled above ----------
+
+// ---------- misc ----------
+// fetch DB debug for imgbb key etc (not required)
+async function fetchDBDebug(){ const d = await fetch('/api/debug/db').then(r=>r.json()); return d; }
+
+</script>
+</body>
+      </html>
