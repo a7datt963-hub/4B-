@@ -221,12 +221,38 @@ app.post('/api/profile/request-edit', async (req,res)=>{
     });
     const data = await r.json();
     if(data && data.ok){
+      // حفظ رسالة البوت لربط الرد بها لاحقاً
       DB.profileEditRequests[String(data.result.message_id)] = String(prof.personalNumber);
       saveData(DB);
       return res.json({ ok:true, msgId: data.result.message_id });
     }
   }catch(e){ console.warn('profile request send error', e); }
   return res.json({ ok:false });
+});
+
+// ---- API: submit profile edit once ----
+app.post('/api/profile/submit-edit', (req,res)=>{
+  const { personal, name, email, phone, password } = req.body;
+  if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
+
+  const prof = findProfileByPersonal(personal);
+  if(!prof) return res.status(404).json({ ok:false, error:'not found' });
+
+  if(prof.canEdit !== true){
+    return res.status(403).json({ ok:false, error:'edit_not_allowed' });
+  }
+
+  // تحديث البيانات
+  if(name) prof.name = name;
+  if(email) prof.email = email;
+  if(phone) prof.phone = phone;
+  if(password) prof.password = password;
+
+  // إلغاء صلاحية التعديل بعد الحفظ
+  prof.canEdit = false;
+  saveData(DB);
+
+  return res.json({ ok:true, profile: prof });
 });
 
 // ---- API: submit help ticket ----
@@ -342,7 +368,7 @@ app.get('/api/notifications/:personal', (req,res)=>{
   const visibleOffers = is7 ? DB.offers : [];
   const userOrders = DB.orders.filter(o => String(o.personalNumber)===String(personal));
   const userCharges = DB.charges.filter(c => String(c.personalNumber)===String(personal));
-  return res.json({ ok:true, profile:prof, offers: visibleOffers, orders:userOrders, charges:userCharges });
+  return res.json({ ok:true, profile:prof, offers: visibleOffers, orders:userOrders, charges:userCharges, canEdit: !!prof.canEdit });
 });
 
 // ---- Poll Telegram getUpdates (process admin replies) ----
