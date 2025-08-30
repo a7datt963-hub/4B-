@@ -1,8 +1,14 @@
+// server.js
 /**
  * server/server.js
  * سيرفر Express جاهز للعمل مع الواجهة (index.html)
  * - رفع ملفات: يحاول رفع إلى IMGBB إن وُجد المفتاح، وإلا يحفظ محلياً داخل public/uploads
  * - يدعم تسجيل/تسجيل دخول، إنشاء طلبات/شحن، تذاكر دعم، وpoll للبوتات على Telegram
+ *
+ * تغييرات مُضافة:
+ * - المعالجة الصحيحة لخصم الرصيد عند إرسال طلب مدفوع من الرصيد (paidWithBalance + paidAmount)
+ * - عند قبول/رفض أو تحديث حالات الشحن/الطلبات عبر ردود البوت، يتم إضافة إشعارات إلى DB.notifications للمستخدم المستهدف
+ * - لا يتم حذف أي شيء من الكود الأصلي، فقط إضافات منطقية
  *
  * تأكد من:
  * - وجود package.json مع start -> "node server/server.js" أو شغّل الملف من مجلد server
@@ -83,6 +89,8 @@ function ensureProfile(personal){
   if(!p){
     p = { personalNumber: String(personal), name: 'ضيف', email:'', phone:'', password:'', balance: 0, canEdit:false };
     DB.profiles.push(p); saveData(DB);
+  } else {
+    if(typeof p.balance === 'undefined') p.balance = 0;
   }
   return p;
 }
@@ -151,7 +159,7 @@ app.post('/api/upload', uploadMemory.single('file'), async (req, res) => {
 app.post('/api/register', async (req,res)=>{
   const { name, email, password, phone } = req.body;
   const personalNumber = req.body.personalNumber || req.body.personal || null;
-if(!personalNumber) return res.status(400).json({ ok:false, error:'missing personalNumber' });
+  if(!personalNumber) return res.status(400).json({ ok:false, error:'missing personalNumber' });
   let p = findProfileByPersonal(personalNumber);
   if(!p){
     p = { personalNumber: String(personalNumber), name:name||'غير معروف', email:email||'', password:password||'', phone:phone||'', balance:0, canEdit:false };
@@ -161,6 +169,7 @@ if(!personalNumber) return res.status(400).json({ ok:false, error:'missing perso
     p.email = email || p.email;
     p.password = password || p.password;
     p.phone = phone || p.phone;
+    if(typeof p.balance === 'undefined') p.balance = 0;
   }
   saveData(DB);
 
@@ -275,11 +284,35 @@ app.post('/api/help', async (req,res)=>{
   }
 });
 
-// ---- API: create order (games or apps) ----
+// ---- API: create order (games or apps)
+//    Now supports paidWithBalance + paidAmount:
+//    - If paidWithBalance true, server verifies prof.balance >= paidAmount and deducts (authoritative)
 app.post('/api/orders', async (req,res)=>{
-  const { personal, phone, type, item, idField, fileLink, cashMethod } = req.body;
+  const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount } = req.body;
   if(!personal || !type || !item) return res.status(400).json({ ok:false, error:'missing fields' });
   const prof = ensureProfile(personal);
+
+  // If paidWithBalance is requested, check and deduct server-side
+  if(paidWithBalance){
+    const price = Number(paidAmount || 0);
+    if(isNaN(price) || price <= 0){
+      return res.status(400).json({ ok:false, error:'invalid_paid_amount' });
+    }
+    if(Number(prof.balance || 0) < price){
+      return res.status(402).json({ ok:false, error:'insufficient_balance' });
+    }
+    // Deduct and create notification about deduction
+    prof.balance = Number(prof.balance || 0) - price;
+    if(!DB.notifications) DB.notifications = [];
+    DB.notifications.unshift({
+      id: String(Date.now()) + '-charge',
+      personal: String(prof.personalNumber),
+      text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+  }
+
   const orderId = Date.now();
   const order = {
     id: orderId,
@@ -291,6 +324,8 @@ app.post('/api/orders', async (req,res)=>{
     status: 'قيد المراجعة',
     replied: false,
     telegramMessageId: null,
+    paidWithBalance: !!paidWithBalance,
+    paidAmount: Number(paidAmount || 0),
     createdAt: new Date().toISOString()
   };
   DB.orders.unshift(order);
@@ -308,6 +343,7 @@ app.post('/api/orders', async (req,res)=>{
       saveData(DB);
     }
   }catch(e){ console.warn('send order failed', e); }
+  saveData(DB);
   return res.json({ ok:true, order });
 });
 
@@ -429,31 +465,85 @@ async function genericBotReplyHandler(update){
   if(!update.message) return;
   const msg = update.message;
   const text = String(msg.text || '').trim();
+
+  // processing replies to sent messages
   if(msg.reply_to_message && msg.reply_to_message.message_id){
     const repliedId = msg.reply_to_message.message_id;
+
+    // find order by telegramMessageId
     const ord = DB.orders.find(o => o.telegramMessageId && Number(o.telegramMessageId) === Number(repliedId));
     if(ord){
       const low = text.toLowerCase();
       if(/^(تم|مقبول|accept)/i.test(low)){
-        ord.status = 'تم قبول طلبك'; ord.replied = true; saveData(DB); return;
+        ord.status = 'تم قبول طلبك'; ord.replied = true; saveData(DB);
       } else if(/^(رفض|مرفوض|reject)/i.test(low)){
-        ord.status = 'تم رفض طلبك'; ord.replied = true; saveData(DB); return;
-      } else { ord.status = text; ord.replied = true; saveData(DB); return; }
+        ord.status = 'تم رفض طلبك'; ord.replied = true; saveData(DB);
+      } else {
+        ord.status = text; ord.replied = true; saveData(DB);
+      }
+      // push a notification for the user about order status change
+      if(!DB.notifications) DB.notifications = [];
+      DB.notifications.unshift({
+        id: String(Date.now()) + '-order',
+        personal: String(ord.personalNumber),
+        text: `تحديث حالة الطلب #${ord.id}: ${ord.status}`,
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+      saveData(DB);
+      return;
     }
+
+    // find charge by telegramMessageId
     const ch = DB.charges.find(c => c.telegramMessageId && Number(c.telegramMessageId) === Number(repliedId));
     if(ch){
       const m = text.match(/الرصيد[:\s]*([0-9]+)/i);
       const mPersonal = text.match(/الرقم الشخصي[:\s\-\(\)]*([0-9]+)/i);
       if(m && mPersonal){
-        const amount = Number(m[1]); const personal = String(mPersonal[1]); const prof = findProfileByPersonal(personal);
-        if(prof){ prof.balance = (prof.balance || 0) + amount; ch.status = 'تم تحويل الرصيد'; ch.replied = true; saveData(DB); }
+        const amount = Number(m[1]);
+        const personal = String(mPersonal[1]);
+        const prof = findProfileByPersonal(personal);
+        if(prof){
+          prof.balance = (prof.balance || 0) + amount;
+          ch.status = 'تم تحويل الرصيد';
+          ch.replied = true;
+          saveData(DB);
+
+          // create notification for the user
+          if(!DB.notifications) DB.notifications = [];
+          DB.notifications.unshift({
+            id: String(Date.now()) + '-balance',
+            personal: String(prof.personalNumber),
+            text: `تم شحن رصيدك بمبلغ ${amount.toLocaleString('en-US')} ل.س. رصيدك الآن: ${(prof.balance||0).toLocaleString('en-US')} ل.س`,
+            read: false,
+            createdAt: new Date().toISOString()
+          });
+          saveData(DB);
+        }
       } else {
+        // generic status change
         if(/^(تم|مقبول|accept)/i.test(text)) { ch.status = 'تم شحن الرصيد'; ch.replied = true; saveData(DB); }
         else if(/^(رفض|مرفوض|reject)/i.test(text)) { ch.status = 'تم رفض الطلب'; ch.replied = true; saveData(DB); }
         else { ch.status = text; ch.replied = true; saveData(DB); }
+
+        // notify user about charge status (no amount)
+        const prof = findProfileByPersonal(ch.personalNumber);
+        if(prof){
+          if(!DB.notifications) DB.notifications = [];
+          DB.notifications.unshift({
+            id: String(Date.now()) + '-charge-status',
+            personal: String(prof.personalNumber),
+            text: `تحديث حالة شحن الرصيد #${ch.id}: ${ch.status}`,
+            read: false,
+            createdAt: new Date().toISOString()
+          });
+          saveData(DB);
+        }
       }
       return;
     }
+
+    // profile edit requests mapping
     if(DB.profileEditRequests && DB.profileEditRequests[String(repliedId)]){
       const personal = DB.profileEditRequests[String(repliedId)];
       if(/^تم$/i.test(text.trim())){
@@ -463,7 +553,7 @@ async function genericBotReplyHandler(update){
           // push a notification for the user
           if(!DB.notifications) DB.notifications = [];
           DB.notifications.unshift({
-            id: String(Date.now()),
+            id: String(Date.now()) + '-edit',
             personal: String(p.personalNumber),
             text: 'تم قبول طلبك بتعديل معلوماتك الشخصية. تحقق من ذلك في ملفك الشخصي.',
             read: false,
@@ -481,6 +571,8 @@ async function genericBotReplyHandler(update){
       }
     }
   }
+
+  // if message is not a reply, detect offers etc.
   if(/^عرض|^هدية/i.test(text)){
     const offerId = Date.now(); DB.offers.unshift({ id: offerId, text, createdAt: new Date().toISOString() }); saveData(DB);
   }
@@ -488,17 +580,26 @@ async function genericBotReplyHandler(update){
 
 // poll wrapper
 async function pollAllBots(){
-  await pollTelegramForBot(CFG.BOT_ORDER_TOKEN, genericBotReplyHandler);
-  await pollTelegramForBot(CFG.BOT_BALANCE_TOKEN, genericBotReplyHandler);
-  await pollTelegramForBot(CFG.BOT_ADMIN_CMD_TOKEN, adminCmdHandler);
-  await pollTelegramForBot(CFG.BOT_LOGIN_REPORT_TOKEN, genericBotReplyHandler);
-  await pollTelegramForBot(CFG.BOT_HELP_TOKEN, genericBotReplyHandler);
-  await pollTelegramForBot(CFG.BOT_OFFERS_TOKEN, genericBotReplyHandler);
+  try{
+    await pollTelegramForBot(CFG.BOT_ADMIN_CMD_TOKEN, adminCmdHandler);
+    await pollTelegramForBot(CFG.BOT_ORDER_TOKEN, genericBotReplyHandler);
+    await pollTelegramForBot(CFG.BOT_BALANCE_TOKEN, genericBotReplyHandler);
+    await pollTelegramForBot(CFG.BOT_LOGIN_REPORT_TOKEN, genericBotReplyHandler);
+    await pollTelegramForBot(CFG.BOT_HELP_TOKEN, genericBotReplyHandler);
+    await pollTelegramForBot(CFG.BOT_OFFERS_TOKEN, genericBotReplyHandler);
+  }catch(e){ console.warn('pollAllBots error', e); }
 }
+
 setInterval(pollAllBots, 2500);
 
 // ---- misc debug endpoints ----
 app.get('/api/debug/db', (req,res)=> res.json({ ok:true, size: { profiles: DB.profiles.length, orders: DB.orders.length, charges: DB.charges.length, offers: DB.offers.length, notifications: (DB.notifications||[]).length }, tgOffsets: DB.tgOffsets || {} }));
 
+app.post('/api/debug/clear-updates', (req,res)=>{ DB.tgOffsets = {}; saveData(DB); res.json({ok:true}); });
+
 // start server
-app.listen(PORT, ()=> console.log('Server listening on', PORT));
+app.listen(PORT, ()=> {
+  console.log(`Server listening on ${PORT}`);
+  DB = loadData();
+  console.log('DB loaded items:', DB.profiles.length, 'profiles');
+});
