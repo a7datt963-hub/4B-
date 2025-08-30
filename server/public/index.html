@@ -430,9 +430,29 @@ document.addEventListener('DOMContentLoaded', ()=> {
   $('btnCharge').addEventListener('click', ()=>{ $('sidebar').classList.remove('active'); openChargePage(); });
 
   // notif
-  $('notifBell').addEventListener('click', ()=> { $('notifPanel').classList.toggle('hidden'); loadNotifications(); });
+  $('notifBell').addEventListener('click', async ()=> { 
+    const hidden = $('notifPanel').classList.toggle('hidden'); 
+    await loadNotifications(); 
+    // if panel just opened, mark notifications as read on server so badge updates
+    if(!hidden){
+      try{
+        await fetch(API_ROOT + 'api/notifications/mark-read', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber }) });
+      }catch(e){ console.warn('mark-read failed', e); }
+      refreshNotificationsCount();
+    }
+  });
   $('notifCloseBtn').addEventListener('click', ()=> $('notifPanel').classList.add('hidden'));
-  $('notifClearBtn').addEventListener('click', () => { $('notifList').innerHTML=''; $('notifBadge').classList.add('hidden'); });
+  $('notifClearBtn').addEventListener('click', async () => { 
+    try{
+      const resp = await fetch(API_ROOT + 'api/notifications/clear', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber }) });
+      const data = await resp.json();
+      if(data && data.ok){
+        $('notifList').innerHTML=''; $('notifBadge').classList.add('hidden');
+      } else {
+        alert('فشل مسح الإشعارات');
+      }
+    }catch(e){ console.error(e); alert('خطأ في الاتصال'); }
+  });
 
   // login toggles
   $('loginTogglePwd').addEventListener('click', function(){ const inp=$('loginPassword'); if(inp.type==='password'){ inp.type='text'; this.textContent='اخفِ'; } else { inp.type='password'; this.textContent='اظهار'; }});
@@ -565,7 +585,7 @@ async function doLogin(){
   // call register API
   const resp = await fetch('https://fourb-tawy.onrender.com/api/register', {
     method:'POST', headers:{'content-type':'application/json'},
-    body: JSON.stringify({ name, email, password, phone, personalNumber: personal })
+    body: JSON.stringify({ name, email, password, phone, personal })
   });
   const data = await resp.json();
   if (data && data.ok) {
@@ -617,7 +637,7 @@ async function confirmProfileSave(){
       method:'POST',
       headers:{'content-type':'application/json'},
       body: JSON.stringify({
-        personalNumber: currentProfile.personalNumber,
+        personal: currentProfile.personalNumber,
         name, email, password, phone
       })
     });
@@ -859,71 +879,73 @@ async function loadOrdersList(){
   }
 }
 
-// ---------- notifications & offers ----------
-async function refreshNotificationsCount(){
-  const resp = await fetch('https://fourb-tawy.onrender.com/api/notifications/' + currentProfile.personalNumber);
-  const data = await resp.json();
-  if(data && data.ok){
-    const offers = data.offers || [];
-    const orders = data.orders || [];
-    const charges = data.charges || [];
-    const unreadCount = (orders.filter(o=>o.replied).length) + (charges.filter(c=>c.replied).length) + (offers.length>0 ? 1 : 0);
-    if(unreadCount>0){ $('notifBadge').classList.remove('hidden'); $('notifBadge').textContent = String(unreadCount); } else { $('notifBadge').classList.add('hidden'); }
-  }
-}
-
 async function loadNotifications(){
-  const resp = await fetch('https://fourb-tawy.onrender.com/api/notifications/' + currentProfile.personalNumber);
-  const data = await resp.json();
-  if(data && data.ok){
+  try{
+    const resp = await fetch(API_ROOT + 'api/notifications/' + currentProfile.personalNumber);
+    const data = await resp.json();
+    if(data && data.ok){
+      const offers = data.offers || [];
+      const orders = data.orders || [];
+      const charges = data.charges || [];
+      const notifications = data.notifications || [];
+      const list = $('notifList'); list.innerHTML = '';
+
+      // render explicit notifications (admin messages)
+      notifications.forEach(n=>{
+        const el = document.createElement('div');
+        el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+        el.innerHTML = `<div><strong>تنبيه</strong></div><div>${n.text}</div><div style="font-size:12px;color:#aaa;margin-top:6px;">${new Date(n.createdAt).toLocaleString()}</div>`;
+        list.appendChild(el);
+      });
+
+      // existing: orders/charges/offers rendering
+      orders.filter(o=>o.replied).forEach(o=>{
+        const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+        el.innerHTML = `<div><strong>حالة الطلب #${o.id}</strong></div><div>${o.status}</div>`;
+        list.appendChild(el);
+      });
+      charges.filter(c=>c.replied).forEach(c=>{
+        const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+        el.innerHTML = `<div><strong>حالة شحنة #${c.id}</strong></div><div>${c.status}</div>`;
+        list.appendChild(el);
+      });
+      offers.forEach(of=>{
+        const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
+        el.innerHTML = `<div><strong>عرض</strong></div><div>${of.text}</div><div style="margin-top:6px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
+        list.appendChild(el);
+      });
+    }
+  }catch(e){
+    console.warn('loadNotifications error', e);
+  }
+}
+
+// ---------- polling + sync canEdit ----------
+async function refreshNotificationsCount(){
+  try{
+    const resp = await fetch(API_ROOT + 'api/notifications/' + currentProfile.personalNumber);
+    const data = await resp.json();
+    if(!data || !data.ok) return;
+
+    // update canEdit from server
+    const serverCanEdit = !!(data.canEdit || (data.profile && data.profile.canEdit));
+    if(serverCanEdit !== !!currentProfile.canEdit){
+      currentProfile.canEdit = serverCanEdit;
+      localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
+      applyProfileEditState();
+    }
+
     const offers = data.offers || [];
     const orders = data.orders || [];
     const charges = data.charges || [];
-    const list = $('notifList'); list.innerHTML = '';
-    orders.filter(o=>o.replied).forEach(o=>{
-      const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-      el.innerHTML = `<div><strong>حالة الطلب #${o.id}</strong></div><div>${o.status}</div>`;
-      list.appendChild(el);
-    });
-    charges.filter(c=>c.replied).forEach(c=>{
-      const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-      el.innerHTML = `<div><strong>حالة شحنة #${c.id}</strong></div><div>${c.status}</div>`;
-      list.appendChild(el);
-    });
-    offers.forEach(of=>{
-      const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-      el.innerHTML = `<div><strong>عرض</strong></div><div>${of.text}</div><div style="margin-top:6px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
-      list.appendChild(el);
-    });
+    const notifications = data.notifications || [];
+    const unreadCount = (orders.filter(o=>o.replied).length) + (charges.filter(c=>c.replied).length) + (offers.length>0 ? 1 : 0) + (notifications.filter(n=>!n.read).length);
+    if(unreadCount>0){ $('notifBadge').classList.remove('hidden'); $('notifBadge').textContent = String(unreadCount); } else { $('notifBadge').classList.add('hidden'); }
+  }catch(err){
+    console.warn('refreshNotificationsCount error', err);
   }
 }
-
-async function fetchOffers(){
-  const resp = await fetch('https://fourb-tawy.onrender.com/api/notifications/' + currentProfile.personalNumber);
-  const data = await resp.json();
-  if(data && data.ok){
-    const offers = data.offers || [];
-    const container = $('offersList'); container.innerHTML = '';
-    offers.forEach(of=>{
-      const el = document.createElement('div'); el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.padding='8px'; el.style.marginBottom='8px';
-      el.innerHTML = `<div>${of.text}</div><div style="margin-top:8px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
-      container.appendChild(el);
-    });
-  }
-}
-
-async function ackOffer(id){
-  const resp = await fetch('https://fourb-tawy.onrender.com/api/offer/ack', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber, offerId: id }) });
-  const data = await resp.json();
-  if(data && data.ok){ alert('تم إرسال التحقق'); }
-}
-
-// ---------- util: upload local file -> imgbb handled above ----------
-
-// ---------- misc ----------
-// fetch DB debug for imgbb key etc (not required)
-async function fetchDBDebug(){ const d = await fetch('https://fourb-tawy.onrender.com/api/debug/db').then(r=>r.json()); return d; }
 
 </script>
 </body>
-  </html>
+      </html>
