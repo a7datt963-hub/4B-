@@ -25,7 +25,7 @@ const CFG = {
   BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || "8484157462:AAGHyBqwL9k1EmzvXAIZkb9UNDcwIGMINAs",
   BOT_ORDER_CHAT: process.env.BOT_ORDER_CHAT || "7649409589",
 
-  BOT_BALANCE_TOKEN: process.env.BOT_BALANCE_TOKEN || "8028609250:AAHXWR7PlZpBieM5Sx0oJI0dbUczxs9XJIg",
+  BOT_BALANCE_TOKEN: process.env.BOT_BALANCE_TOKEN || "8028609250:AAHXWR7PlZpBieM5x0oJI0dbUczxs9XJIg",
   BOT_BALANCE_CHAT: process.env.BOT_BALANCE_CHAT || "7649409589",
 
   BOT_ADMIN_CMD_TOKEN: process.env.BOT_ADMIN_CMD_TOKEN || "7867503081:AAE32J-TrMh52QYHrbPzsKxnM7qbgA9iKCo",
@@ -54,6 +54,7 @@ function loadData(){
         orders: [],
         charges: [],
         offers: [],
+        notifications: [],
         profileEditRequests: {}, // message_id => personalNumber
         blocked: [],
         tgOffsets: {} // botToken => offset
@@ -65,7 +66,7 @@ function loadData(){
     return JSON.parse(raw || '{}');
   }catch(e){
     console.error('loadData error', e);
-    return { profiles:[], orders:[], charges:[], offers:[], profileEditRequests:{}, blocked:[], tgOffsets:{} };
+    return { profiles:[], orders:[], charges:[], offers:[], notifications:[], profileEditRequests:{}, blocked:[], tgOffsets:{} };
   }
 }
 function saveData(d){
@@ -368,7 +369,28 @@ app.get('/api/notifications/:personal', (req,res)=>{
   const visibleOffers = is7 ? DB.offers : [];
   const userOrders = DB.orders.filter(o => String(o.personalNumber)===String(personal));
   const userCharges = DB.charges.filter(c => String(c.personalNumber)===String(personal));
-  return res.json({ ok:true, profile:prof, offers: visibleOffers, orders:userOrders, charges:userCharges, canEdit: !!prof.canEdit });
+  const userNotifications = (DB.notifications || []).filter(n => String(n.personal) === String(personal));
+  return res.json({ ok:true, profile:prof, offers: visibleOffers, orders:userOrders, charges:userCharges, notifications: userNotifications, canEdit: !!prof.canEdit });
+});
+
+// mark notifications as read for a user
+app.post('/api/notifications/mark-read', (req,res)=>{
+  const { personal } = req.body || {};
+  if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
+  if(!DB.notifications) DB.notifications = [];
+  DB.notifications.forEach(n => { if(String(n.personal) === String(personal)) n.read = true; });
+  saveData(DB);
+  return res.json({ ok:true });
+});
+
+// clear/delete all notifications for a user
+app.post('/api/notifications/clear', (req,res)=>{
+  const { personal } = req.body || {};
+  if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
+  if(!DB.notifications) DB.notifications = [];
+  DB.notifications = DB.notifications.filter(n => String(n.personal) !== String(personal));
+  saveData(DB);
+  return res.json({ ok:true });
 });
 
 // ---- Poll Telegram getUpdates (process admin replies) ----
@@ -434,9 +456,28 @@ async function genericBotReplyHandler(update){
     if(DB.profileEditRequests && DB.profileEditRequests[String(repliedId)]){
       const personal = DB.profileEditRequests[String(repliedId)];
       if(/^تم$/i.test(text.trim())){
-        const p = findProfileByPersonal(personal); if(p){ p.canEdit = true; saveData(DB); }
-        delete DB.profileEditRequests[String(repliedId)]; saveData(DB); return;
-      } else { delete DB.profileEditRequests[String(repliedId)]; saveData(DB); return; }
+        const p = findProfileByPersonal(personal);
+        if(p){
+          p.canEdit = true;
+          // push a notification for the user
+          if(!DB.notifications) DB.notifications = [];
+          DB.notifications.unshift({
+            id: String(Date.now()),
+            personal: String(p.personalNumber),
+            text: 'تم قبول طلبك بتعديل معلوماتك الشخصية. تحقق من ذلك في ملفك الشخصي.',
+            read: false,
+            createdAt: new Date().toISOString()
+          });
+          saveData(DB);
+        }
+        delete DB.profileEditRequests[String(repliedId)];
+        saveData(DB);
+        return;
+      } else {
+        delete DB.profileEditRequests[String(repliedId)];
+        saveData(DB);
+        return;
+      }
     }
   }
   if(/^عرض|^هدية/i.test(text)){
@@ -446,27 +487,17 @@ async function genericBotReplyHandler(update){
 
 // poll wrapper
 async function pollAllBots(){
-  try{
-    await pollTelegramForBot(CFG.BOT_ADMIN_CMD_TOKEN, adminCmdHandler);
-    await pollTelegramForBot(CFG.BOT_ORDER_TOKEN, genericBotReplyHandler);
-    await pollTelegramForBot(CFG.BOT_BALANCE_TOKEN, genericBotReplyHandler);
-    await pollTelegramForBot(CFG.BOT_LOGIN_REPORT_TOKEN, genericBotReplyHandler);
-    await pollTelegramForBot(CFG.BOT_HELP_TOKEN, genericBotReplyHandler);
-    await pollTelegramForBot(CFG.BOT_OFFERS_TOKEN, genericBotReplyHandler);
-  }catch(e){ console.warn('pollAllBots error', e); }
+  await pollTelegramForBot(CFG.BOT_ORDER_TOKEN, genericBotReplyHandler);
+  await pollTelegramForBot(CFG.BOT_BALANCE_TOKEN, genericBotReplyHandler);
+  await pollTelegramForBot(CFG.BOT_ADMIN_CMD_TOKEN, adminCmdHandler);
+  await pollTelegramForBot(CFG.BOT_LOGIN_REPORT_TOKEN, genericBotReplyHandler);
+  await pollTelegramForBot(CFG.BOT_HELP_TOKEN, genericBotReplyHandler);
+  await pollTelegramForBot(CFG.BOT_OFFERS_TOKEN, genericBotReplyHandler);
 }
+setInterval(pollAllBots, 2500);
 
-setInterval(pollAllBots, 5000);
-
-app.post('/api/poll', async (req,res)=>{ await pollAllBots(); res.json({ ok:true }); });
-
-// ---- administrative endpoints (debug) ----
-app.get('/api/debug/db', (req,res)=> res.json(DB));
-app.post('/api/debug/clear-updates', (req,res)=>{ DB.tgOffsets = {}; saveData(DB); res.json({ok:true}); });
+// ---- misc debug endpoints ----
+app.get('/api/debug/db', (req,res)=> res.json({ ok:true, size: { profiles: DB.profiles.length, orders: DB.orders.length, charges: DB.charges.length, offers: DB.offers.length, notifications: (DB.notifications||[]).length }, tgOffsets: DB.tgOffsets || {} }));
 
 // start server
-app.listen(PORT, ()=> {
-  console.log(`Server listening on ${PORT}`);
-  DB = loadData();
-  console.log('DB loaded items:', DB.profiles.length, 'profiles');
-});
+app.listen(PORT, ()=> console.log('Server listening on', PORT));
