@@ -421,7 +421,17 @@ document.addEventListener('DOMContentLoaded', ()=> {
     localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
   }
   refreshUIFromProfile();
-  showHome();
+
+  // --- عرض صفحة الدخول تلقائياً إذا المستخدم ضيف أو لا يملك بيانات تسجيل ---
+  const isGuest = (!currentProfile || !currentProfile.name || currentProfile.name === 'ضيف');
+  const hasCreds = !!(currentProfile && currentProfile.password); // يعتبر مسجّل إذا حفظنا كلمة المرور
+  if (isGuest || !hasCreds) {
+    hideAllPages();
+    show('loginPage');
+    window.scrollTo({ top: 0 });
+  } else {
+    showHome();
+  }
   // poll server for updates every 6s
   setInterval(()=>{ refreshNotificationsCount(); fetchOffers(); }, 6000);
   refreshNotificationsCount();
@@ -486,28 +496,39 @@ async function doLogin(){
     body: JSON.stringify({ name, email, password, phone, personalNumber: personal })
   });
   const data = await resp.json();
-  if(data && data.ok){
-    currentProfile = data.profile;
+  if (data && data.ok) {
+    // إذا الخادم أرجع ملف البروفايل استخدمه، وإلا أنشئ واحدًا محليًا من الحقول
+    currentProfile = data.profile || { name, email, phone, password, personalNumber: personal };
+    if (!currentProfile.personalNumber) currentProfile.personalNumber = personal;
+    // خزّن محلياً
     localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
+    localStorage.setItem('is_logged_in', '1');
     refreshUIFromProfile();
     showHome();
     alert('تم تسجيل الدخول');
   } else {
-    alert('فشل التسجيل: ' + (data.error || 'خطأ غير معروف'));
+    alert('فشل التسجيل: ' + (data && data.error ? data.error : 'خطأ غير معروف'));
   }
-}
+} // <-- سكّرت هون دالة doLogin
 
 // request profile edit (sends message to admin bot)
 async function requestProfileEdit(){
   const ok = confirm('سيتم إرسال طلب تعديل بياناتك للإدارة. هل تريد المتابعة؟');
   if(!ok) return;
   const resp = await fetch('https://fourb-tawy.onrender.com/api/profile/request-edit', {
-    method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber })
+    method:'POST', 
+    headers:{'content-type':'application/json'}, 
+    body: JSON.stringify({ personal: currentProfile.personalNumber })
   });
   const data = await resp.json();
-  if(data && data.ok){ alert('تم إرسال طلب التعديل. انتظر موافقة الإدارة.'); $('requestEditBtn').textContent='تم إرسال الطلب'; setTimeout(()=>$('requestEditBtn').textContent='طلب تعديل معلوماتك', 10000); } else { alert('فشل الإرسال'); }
+  if (data && data.ok) {
+    alert('تم إرسال طلب التعديل. انتظر موافقة الإدارة.');
+    $('requestEditBtn').textContent='تم إرسال الطلب';
+    setTimeout(() => $('requestEditBtn').textContent='طلب تعديل معلوماتك', 10000);
+  } else {
+    alert('فشل الإرسال');
+  }
 }
-
 function confirmProfileSave(){
   // save to backend
   const name = $('profileName').value.trim();
@@ -806,4 +827,4 @@ async function fetchDBDebug(){ const d = await fetch('https://fourb-tawy.onrende
 
 </script>
 </body>
-        </html>
+  </html>
