@@ -569,7 +569,7 @@ async function doLogin(){
   if(!password){ if(errEl){ errEl.textContent='الرجاء إدخال كلمة السر'; errEl.style.display='block'; } else alert('الرجاء إدخال كلمة السر'); return; }
 
   try{
-    const resp = await fetch(`${API_ROOT}/api/register`, {
+    const resp = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/register`, {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ name, email, password, phone, personalNumber: personal })
     });
@@ -595,7 +595,7 @@ async function requestProfileEdit(){
   const ok = confirm('سيتم إرسال طلب تعديل بياناتك للإدارة. هل تريد المتابعة؟');
   if(!ok) return;
   try{
-    const resp = await fetch(`${API_ROOT}/api/profile/request-edit`, {
+    const resp = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/profile/request-edit`, {
       method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber })
     });
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -613,7 +613,7 @@ function confirmProfileSave(){
   currentProfile.name = name; currentProfile.email = email; currentProfile.password = password; currentProfile.phone = phone; currentProfile.canEdit = false;
   localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
   // call server to persist (fire-and-forget, but safe)
-  fetch(`${API_ROOT}/api/register`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, email, password, phone, personalNumber: currentProfile.personalNumber }) }).catch(e=>console.error('save profile server error', e));
+  fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/register`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, email, password, phone, personalNumber: currentProfile.personalNumber }) }).catch(e=>console.error('save profile server error', e));
   alert('تم حفظ التعديلات');
   applyProfileEditState();
   refreshUIFromProfile();
@@ -627,7 +627,7 @@ async function submitHelp(){
   const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : localStorage.getItem('personalNumber');
   if(!issue){ alert('اختر مشكلتك'); return; }
   try{
-    const resp = await fetch(`${API_ROOT}/api/help`, {
+    const resp = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/help`, {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ personal, issue, fileLink, desc, name: currentProfile.name, email: currentProfile.email, phone: currentProfile.phone })
     });
@@ -648,7 +648,7 @@ async function uploadFileToImgbb(file, targetInputId = 'paymentFileLink', status
     // Try server upload first (server should implement POST /api/upload => { ok:true, url })
     const fd = new FormData();
     fd.append('file', file);
-    const resp = await fetch(`${API_ROOT}/api/upload`, { method:'POST', body: fd });
+    const resp = await fetch(`${API_ROOT}/apihttps://fourb-tawy.onrender.com/upload`, { method:'POST', body: fd });
     if(resp.ok){
       const data = await resp.json().catch(()=>null);
       if(data && data.ok && data.url){
@@ -778,7 +778,7 @@ async function submitPaymentDetails(){
       const price = valOrEmpty('priceDisplay') || '';
       if(!game || !idField || !selectedGameOption){ alert('اكمل البيانات'); return; }
       const body = { personal, phone: currentProfile.phone, type:'شحن لعبة', item: `${game} - ${selectedGameOption}`, idField, fileLink, cashMethod };
-      const r = await fetch(`${API_ROOT}/api/orders`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+      const r = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/orders`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
       if(!r.ok) throw new Error('HTTP '+r.status);
       const data = await r.json();
       if(data && data.ok){ hideAllPages(); show('reviewPage'); const rm=$('reviewMsg'); if(rm) rm.textContent='تم ارسال طلبك وسيتم مراجعته'; localStorage.setItem('lastOrderId', data.order && data.order.id ? data.order.id : ''); } else alert('فشل ارسال الطلب');
@@ -788,7 +788,7 @@ async function submitPaymentDetails(){
       const idField = valOrEmpty('appIdField');
       if(!app || !idField || !selectedAppOption){ alert('اكمل البيانات'); return; }
       const body = { personal, phone: currentProfile.phone, type:'شراء تطبيق', item: `${app} - ${selectedAppOption}`, idField, fileLink, cashMethod };
-      const r = await fetch(`${API_ROOT}/api/orders`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+      const r = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/orders`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
       if(!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       if(data && data.ok){ hideAllPages(); show('reviewPage'); const rm=$('reviewMsg'); if(rm) rm.textContent='تم ارسال طلب التطبيق'; } else alert('فشل ارسال الطلب');
@@ -798,7 +798,7 @@ async function submitPaymentDetails(){
       const amount = prompt('كم المبلغ الذي تريد شحنه؟ (أدخل رقم فقط)');
       if(!amount || isNaN(Number(amount))){ alert('قيمة غير صحيحة'); return; }
       const method = cashMethod || 'unknown';
-      const r = await fetch(`${API_ROOT}/api/charge`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal, phone: currentProfile.phone, amount, method, fileLink }) });
+      const r = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/charge`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal, phone: currentProfile.phone, amount, method, fileLink }) });
       if(!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       if(data && data.ok){ alert('تم ارسال طلب الشحن. انتظر الموافقة.'); hideAllPages(); showHome(); } else alert('فشل ارسال طلب الشحن');
@@ -813,7 +813,7 @@ async function submitPaymentDetails(){
 async function loadOrdersList(){
   try{
     const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : '';
-    const resp = await fetch(`${API_ROOT}/api/notifications/${personal}`);
+    const resp = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/notifications/${personal}`);
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if(data && data.ok){
@@ -840,7 +840,7 @@ async function loadOrdersList(){
 async function refreshNotificationsCount(){
   try{
     const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : '';
-    const resp = await fetch(`${API_ROOT}/api/notifications/${personal}`);
+    const resp = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/notifications/${personal}`);
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if(data && data.ok){
@@ -857,7 +857,7 @@ async function refreshNotificationsCount(){
 async function loadNotifications(){
   try{
     const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : '';
-    const resp = await fetch(`${API_ROOT}/api/notifications/${personal}`);
+    const resp = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/notifications/${personal}`);
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if(data && data.ok){
@@ -888,7 +888,7 @@ async function loadNotifications(){
 async function fetchOffers(){
   try{
     const personal = currentProfile && currentProfile.personalNumber ? currentProfile.personalNumber : localStorage.getItem('personalNumber') || '';
-    const resp = await fetch(`${API_ROOT}/api/notifications/${personal}`);
+    const resp = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/notifications/${personal}`);
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if(data && data.ok){
@@ -906,7 +906,7 @@ async function fetchOffers(){
 
 async function ackOffer(id){
   try{
-    const resp = await fetch(`${API_ROOT}/api/offer/ack`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber, offerId: id }) });
+    const resp = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/offer/ack`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber, offerId: id }) });
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if(data && data.ok){ alert('تم إرسال التحقق'); fetchOffers(); refreshNotificationsCount(); } else alert('فشل التحقق');
@@ -914,7 +914,7 @@ async function ackOffer(id){
 }
 
 // ---------- misc ----------
-async function fetchDBDebug(){ try{ const d = await fetch(`${API_ROOT}/api/debug/db`).then(r=>r.json()); return d; }catch(e){ console.error(e); return null; } }
+async function fetchDBDebug(){ try{ const d = await fetch(`${API_ROOT}/https://fourb-tawy.onrender.com/api/debug/db`).then(r=>r.json()); return d; }catch(e){ console.error(e); return null; } }
 
 // === Forms: login/register (safe bindings) ===
 onIf('loginForm','submit', async (e)=>{
@@ -922,7 +922,7 @@ onIf('loginForm','submit', async (e)=>{
   const personal = valOrEmpty('loginPersonal');
   const password = valOrEmpty('loginPassword');
   try{
-    const res = await fetch(`${API_ROOT}/api/login`, {
+    const res = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/login`, {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ personalNumber: personal, password })
@@ -946,7 +946,7 @@ onIf('registerForm','submit', async (e)=>{
   const personal = valOrEmpty('regPersonal');
   const password = valOrEmpty('regPassword');
   try{
-    const res = await fetch(`${API_ROOT}/api/register`, {
+    const res = await fetch(`${API_ROOT}https://fourb-tawy.onrender.com/api/register`, {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ name,email,phone,personalNumber:personal,password })
@@ -963,4 +963,4 @@ onIf('registerForm','submit', async (e)=>{
 });
 </script>
 </body>
-  </html>
+      </html>
