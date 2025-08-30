@@ -601,20 +601,47 @@ async function requestProfileEdit(){
     alert('فشل الإرسال');
   }
 }
-function confirmProfileSave(){
-  // save to backend
+async function confirmProfileSave(){
   const name = $('profileName').value.trim();
   const email = $('profileEmail').value.trim();
   const password = $('profilePassword').value;
   const phone = $('profilePhone').value.trim();
-  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert('البريد غير صالح'); return; }
-  currentProfile.name = name; currentProfile.email = email; currentProfile.password = password; currentProfile.phone = phone; currentProfile.canEdit = false;
-  localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
-  // also call register endpoint to save server-side
-  fetch('https://fourb-tawy.onrender.com/api/register', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, email, password, phone, personalNumber: currentProfile.personalNumber }) });
-  alert('تم حفظ التعديلات');
-  applyProfileEditState();
-  refreshUIFromProfile();
+
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    alert('البريد غير صالح');
+    return;
+  }
+
+  try {
+    const resp = await fetch('https://fourb-tawy.onrender.com/api/profile/submit-edit', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({
+        personalNumber: currentProfile.personalNumber,
+        name, email, password, phone
+      })
+    });
+    const data = await resp.json();
+
+    if(data.ok){
+      // عدل نسخة المتصفح واحفظها
+      currentProfile.name = name;
+      currentProfile.email = email;
+      currentProfile.password = password;
+      currentProfile.phone = phone;
+      currentProfile.canEdit = false; // انتهت صلاحية التعديل
+      localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
+
+      alert('تم حفظ التعديلات');
+      applyProfileEditState();
+      refreshUIFromProfile();
+    } else {
+      alert('لا يمكنك التعديل الآن: ' + (data.error || 'خطأ غير معروف'));
+    }
+  } catch(err){
+    console.error(err);
+    alert('فشل الاتصال بالخادم');
+  }
 }
 
 // ---------- help submit ----------
