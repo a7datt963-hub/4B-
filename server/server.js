@@ -149,8 +149,9 @@ app.post('/api/upload', uploadMemory.single('file'), async (req, res) => {
 
 // ---- API: register / login ----
 app.post('/api/register', async (req,res)=>{
-  const { name, email, password, phone, personalNumber } = req.body;
-  if(!personalNumber) return res.status(400).json({ ok:false, error:'missing personalNumber' });
+  const { name, email, password, phone } = req.body;
+  const personalNumber = req.body.personalNumber || req.body.personal || null;
+if(!personalNumber) return res.status(400).json({ ok:false, error:'missing personalNumber' });
   let p = findProfileByPersonal(personalNumber);
   if(!p){
     p = { personalNumber: String(personalNumber), name:name||'غير معروف', email:email||'', password:password||'', phone:phone||'', balance:0, canEdit:false };
