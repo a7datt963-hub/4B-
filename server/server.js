@@ -1,7 +1,7 @@
 /**
  * server/server.js
- * نسخة معدّلة بسيطة: يطبع ردود Telegram للتشخيص، يدعم BOT_NOTIFY_TOKEN و BOT_NOTIFY_CHAT من env،
- * ويمد endpoint mark-read ليدعم body أو param، ويعيد تهيئة flags المرتبطة بالباج.
+ * نسخة معدّلة: يدعم إرسال عروض من الـ Admin، إشعارات "عرض عام" للأرقام 7 خانات،
+ * endpoint لإعلام المستخدم أنه حصل على الهدية، وفحص سيرفري قبل قبول ack العرض.
  */
 
 const express = require('express');
@@ -34,7 +34,7 @@ const CFG = {
   BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "",
   BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || "",
 
-  // البوت الذي تستخدمه لإرسال رسائل مباشرة للمستخدمين (تم إضافة هذا)
+  // البوت الذي تستخدمه لإرسال رسائل مباشرة للمستخدمين (إشعارات عامة/مباشرة)
   BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || "",
   BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || "",
 
@@ -336,19 +336,112 @@ app.post('/api/charge', async (req,res)=>{
   return res.json({ ok:true, charge });
 });
 
-// offer ack
+/**
+ * New endpoint: Admin (or UI) posts an offer.
+ * - يحفظ العرض في DB.offers
+ * - يضيف اشعار عام "هناك عرض في العروض تحقق منه" لكل مستخدم رقمه الشخصي مكوّن من 7 خانات
+ * body: { text: "خصم 10%" }
+ */
+app.post('/api/offers/send', async (req, res) => {
+  const { text } = req.body || {};
+  if(!text) return res.status(400).json({ ok:false, error:'missing text' });
+
+  const offer = { id: String(Date.now()), text, createdAt: new Date().toISOString() };
+  DB.offers = DB.offers || [];
+  DB.offers.unshift(offer);
+  DB.notifications = DB.notifications || [];
+
+  // أشعار عام لكل مستخدم رقمه 7 خانات
+  DB.profiles.forEach(p => {
+    try {
+      if(String(p.personalNumber).length === 7) {
+        DB.notifications.unshift({
+          id: String(Date.now()) + '-offer-' + p.personalNumber,
+          personal: String(p.personalNumber),
+          text: 'هناك عرض في العروض تحقق منه',
+          read: false,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch(e){ /* ignore */ }
+  });
+
+  saveData(DB);
+
+  // اختياري: أرسل أيضًا رسالة إلى تيليجرام لإعلام المشرفين
+  try{
+    if(CFG.BOT_OFFERS_TOKEN && CFG.BOT_OFFERS_CHAT){
+      await fetch(`https://api.telegram.org/bot${CFG.BOT_OFFERS_TOKEN}/sendMessage`, {
+        method:'POST',
+        headers:{ 'content-type':'application/json' },
+        body: JSON.stringify({ chat_id: CFG.BOT_OFFERS_CHAT, text: `عرض جديد: ${text}` })
+      });
+    }
+  }catch(e){ console.warn('sendOffer telegram failed', e); }
+
+  return res.json({ ok:true, offer });
+});
+
+/**
+ * New endpoint: يُعلم مستخدم محدد "لقد حصلت على العرض او الهدية"
+ * هذا الendpoint يُستدعى من بوت الإشعارات أو من الإدارة بعد تحقق (مثلاً بعد الشحن)
+ * body: { personal: "1234567", text?: "لقد حصلت على العرض او الهدية" }
+ */
+app.post('/api/notify/gift', (req, res) => {
+  const { personal, text } = req.body || {};
+  if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
+  DB.notifications = DB.notifications || [];
+  DB.notifications.unshift({
+    id: String(Date.now()) + '-gift-' + personal,
+    personal: String(personal),
+    text: text || 'لقد حصلت على العرض او الهدية',
+    read: false,
+    createdAt: new Date().toISOString()
+  });
+  saveData(DB);
+  return res.json({ ok:true });
+});
+
+/**
+ * offer ack
+ * - قبل إرسال الرسالة إلى BOT_OFFERS_TOKEN نتحقق أن لدى المستخدم إشعار gift غير مقروء
+ * - إذا غير موجود → رفض (403)
+ * - إذا موجود → نرسل الرسالة ونعلم الاشعارات كـ read (لتفادي إعادة الضغط)
+ */
 app.post('/api/offer/ack', async (req,res)=>{
-  const { personal, offerId } = req.body;
+  const { personal, offerId } = req.body || {};
   if(!personal || !offerId) return res.status(400).json({ ok:false, error:'missing' });
   const prof = ensureProfile(personal);
-  const offer = DB.offers.find(o=>String(o.id)===String(offerId));
-  const text = `لقد حصل على العرض او الهدية\nالرقم الشخصي: ${personal}\nالبريد: ${prof.email||'لا يوجد'}\nالهاتف: ${prof.phone||'لا يوجد'}\nالعرض: ${offer ? offer.text : 'غير معروف'}`;
+  const offer = (DB.offers || []).find(o=>String(o.id)===String(offerId));
+
+  // فحص سيرفري: يوجد إشعار gift غير مقروء؟
+  const hasGiftNotif = (DB.notifications || []).some(n =>
+    String(n.personal) === String(personal) && !n.read && /حصلت\s+على\s+العرض|حصلت\s+على\s+الهدية|لقد\s+حصلت\s+على\s+العرض|لقد\s+حصلت\s+على\s+الهدية/i.test(n.text)
+  );
+  if(!hasGiftNotif){
+    return res.status(403).json({ ok:false, error:'no_gift_notification' });
+  }
+
+  const text = `لقد حصل على العرض او الهدية\nالرقم الشخصي: ${personal}\nالاسم: ${prof.name || 'غير معروف'}\nالبريد: ${prof.email||'لا يوجد'}\nالهاتف: ${prof.phone||'لا يوجد'}\nالعرض: ${offer ? offer.text : 'غير معروف'}`;
+
   try{
     const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_OFFERS_TOKEN}/sendMessage`, {
       method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_OFFERS_CHAT, text })
     });
     const data = await r.json().catch(()=>null);
     console.log('offer ack telegram result:', data);
+
+    // بعد الإرسال: ميزة عملية — وسم إشعارات gift كـ read لتفادي تكرار الضغط
+    if(DB.notifications && DB.notifications.length){
+      DB.notifications = DB.notifications.map(n=>{
+        if(String(n.personal) === String(personal) && /حصلت\s+على\s+العرض|حصلت\s+على\s+الهدية|لقد\s+حصلت\s+على\s+العرض|لقد\s+حصلت\s+على\s+الهدية/i.test(n.text)){
+          return Object.assign({}, n, { read: true });
+        }
+        return n;
+      });
+      saveData(DB);
+    }
+
     return res.json({ ok:true });
   }catch(e){
     return res.json({ ok:false, error: String(e) });
@@ -560,9 +653,29 @@ async function genericBotReplyHandler(update){
     }
   }catch(e){ console.warn('personal direct notify parse error', e); }
 
-  // offers
+  // offers posted by admins/bots via telegram
   if(/^عرض|^هدية/i.test(text)){
-    const offerId = Date.now(); DB.offers.unshift({ id: offerId, text, createdAt: new Date().toISOString() }); saveData(DB);
+    const offerId = Date.now();
+    DB.offers = DB.offers || [];
+    DB.offers.unshift({ id: String(offerId), text, createdAt: new Date().toISOString() });
+    DB.notifications = DB.notifications || [];
+
+    // أضف إشعار عام لكل مستخدم رقمه 7 خانات
+    DB.profiles.forEach(p => {
+      try {
+        if(String(p.personalNumber).length === 7) {
+          DB.notifications.unshift({
+            id: String(Date.now()) + '-offer-' + p.personalNumber,
+            personal: String(p.personalNumber),
+            text: 'هناك عرض في العروض تحقق منه',
+            read: false,
+            createdAt: new Date().toISOString()
+          });
+        }
+      } catch(e){ /* ignore */ }
+    });
+
+    saveData(DB);
   }
 }
 
