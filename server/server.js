@@ -1,7 +1,8 @@
 /**
  * server/server.js
- * نسخة معدّلة بسيطة: يطبع ردود Telegram للتشخيص، يدعم BOT_NOTIFY_TOKEN و BOT_NOTIFY_CHAT من env،
- * ويمد endpoint mark-read ليدعم body أو param، ويعيد تهيئة flags المرتبطة بالباج.
+ * نسخة معدّلة: احتفظت بكل كودك الأصلي وأضافت تكامل Supabase (register/login sb + balance helpers)
+ * - لا حذف لأي جزء من الكود القديم
+ * - إضافات: supabase init, bcrypt, sb helpers, تعديل /api/charge و paidWithBalance داخل /api/orders
  */
 
 const express = require('express');
@@ -28,7 +29,7 @@ const CFG = {
   BOT_LOGIN_REPORT_TOKEN: process.env.BOT_LOGIN_REPORT_TOKEN || "",
   BOT_LOGIN_REPORT_CHAT: process.env.BOT_LOGIN_REPORT_CHAT || "",
 
-    BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || "",
+  BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || "",
   BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || "",
 
   BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "",
@@ -41,7 +42,7 @@ const CFG = {
   IMGBB_KEY: process.env.IMGBB_KEY || ""
 };
 
-// ======= Supabase + bcrypt additions (auto-inserted) =======
+// ======= Supabase + bcrypt additions (ADDED HERE) =======
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcryptjs');
 
@@ -67,6 +68,43 @@ async function sbFindProfileByEmailPhone(email, phone){
   if(error){ console.warn('Supabase find error', error); return null; }
   return data || null;
 }
+
+// helper: increase balance by email+phone (returns {ok:true, profile})
+async function sbIncreaseBalanceByEmailPhone(email, phone, amount){
+  if(!useSupabase) return { ok:false, error:'no_supabase' };
+  try{
+    const { data: prof, error: fetchErr } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('email', String(email))
+      .eq('phone', String(phone))
+      .maybeSingle();
+    if(fetchErr) return { ok:false, error: fetchErr.message || 'fetch_error' };
+    if(!prof) return { ok:false, error:'not_found' };
+    const newBal = Number(prof.balance || 0) + Number(amount || 0);
+    const { data, error } = await supabase.from('profiles').update({ balance: newBal, updated_at: new Date().toISOString() }).eq('id', prof.id).select().single();
+    if(error) return { ok:false, error: error.message || 'update_error' };
+    return { ok:true, profile: data };
+  }catch(e){
+    console.warn('sbIncreaseBalance error', e);
+    return { ok:false, error: String(e) };
+  }
+}
+
+// helper: try deduct using RPC deduct_balance_for_account
+async function sbTryDeduct(email, phone, amount){
+  if(!useSupabase) return { ok:false, error:'no_supabase' };
+  try{
+    const { data, error } = await supabase.rpc('deduct_balance_for_account', { p_email: String(email), p_phone: String(phone), p_amount: Number(amount) });
+    if(error) return { ok:false, error: error.message || 'rpc_error' };
+    if(!data || data.length === 0) return { ok:false, error:'insufficient_or_not_found' };
+    return { ok:true, result: data[0] };
+  }catch(e){
+    console.warn('sbTryDeduct error', e);
+    return { ok:false, error: String(e) };
+  }
+}
+// ======= End Supabase additions =======
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 
@@ -282,16 +320,42 @@ app.post('/api/orders', async (req,res)=>{
   if(paidWithBalance){
     const price = Number(paidAmount || 0);
     if(isNaN(price) || price <= 0) return res.status(400).json({ ok:false, error:'invalid_paid_amount' });
-    if(Number(prof.balance || 0) < price) return res.status(402).json({ ok:false, error:'insufficient_balance' });
-    prof.balance = Number(prof.balance || 0) - price;
-    if(!DB.notifications) DB.notifications = [];
-    DB.notifications.unshift({
-      id: String(Date.now()) + '-charge',
-      personal: String(prof.personalNumber),
-      text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
-      read: false,
-      createdAt: new Date().toISOString()
-    });
+
+    if(useSupabase){
+      // عند استخدام Supabase نحتاج email+phone لتشغيل RPC الآتومي
+      const targetEmail = req.body.email || prof.email || null;
+      const targetPhone = req.body.phone || prof.phone || null;
+      if(!targetEmail || !targetPhone){
+        return res.status(400).json({ ok:false, error:'need_email_and_phone_for_balance_deduct' });
+      }
+      const deduct = await sbTryDeduct(targetEmail, targetPhone, price);
+      if(!deduct.ok){
+        return res.status(402).json({ ok:false, error: deduct.error || 'insufficient_balance' });
+      }
+      // deduced: deduct.result contains id,email,phone,balance
+      if(!DB.notifications) DB.notifications = [];
+      DB.notifications.unshift({
+        id: String(Date.now()) + '-charge',
+        personal: String(req.body.personal || targetEmail),
+        text: `تم خصم ${price.toLocaleString('en-US')} ل.س من حسابك لطلب: ${item}. رصيدك الآن: ${deduct.result.balance}`,
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+      saveData(DB);
+    } else {
+      // fallback to local DB
+      if(Number(prof.balance || 0) < price) return res.status(402).json({ ok:false, error:'insufficient_balance' });
+      prof.balance = Number(prof.balance || 0) - price;
+      if(!DB.notifications) DB.notifications = [];
+      DB.notifications.unshift({
+        id: String(Date.now()) + '-charge',
+        personal: String(prof.personalNumber),
+        text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+      saveData(DB);
+    }
   }
 
   const orderId = Date.now();
@@ -329,10 +393,60 @@ app.post('/api/orders', async (req,res)=>{
   return res.json({ ok:true, order });
 });
 
-// charge (طلب شحن رصيد)
+// charge (طلب شحن رصيد) -- modified to support Supabase
 app.post('/api/charge', async (req,res)=>{
-  const { personal, phone, amount, method, fileLink } = req.body;
-  if(!personal || !amount) return res.status(400).json({ ok:false, error:'missing fields' });
+  const { personal, phone, amount, method, fileLink, email } = req.body;
+  if((!personal && !email) || !amount) return res.status(400).json({ ok:false, error:'missing fields' });
+
+  // If using Supabase, we prefer to update supabase profile balance
+  if(useSupabase){
+    // determine target email & phone
+    let targetEmail = email || null;
+    let targetPhone = phone || null;
+    if(!targetEmail && personal){
+      const localProf = findProfileByPersonal(personal);
+      if(localProf){ targetEmail = localProf.email || null; targetPhone = localProf.phone || targetPhone; }
+    }
+    if(!targetEmail || !targetPhone){
+      return res.status(400).json({ ok:false, error:'need_email_and_phone_for_supabase' });
+    }
+
+    // increase balance in supabase
+    const inc = await sbIncreaseBalanceByEmailPhone(targetEmail, targetPhone, Number(amount));
+    if(!inc.ok) return res.status(500).json({ ok:false, error: inc.error || 'sb_update_failed' });
+
+    // keep local charge record for history
+    const chargeId = Date.now();
+    const charge = {
+      id: chargeId,
+      personalNumber: String(personal || targetEmail),
+      phone: targetPhone,
+      amount, method, fileLink: fileLink || '',
+      status: 'قيد المراجعة',
+      telegramMessageId: null,
+      createdAt: new Date().toISOString()
+    };
+    DB.charges.unshift(charge);
+    saveData(DB);
+
+    // notify telegram as before
+    try{
+      const text = `طلب شحن رصيد:\n\nمعرف: ${chargeId}\nالبريد: ${targetEmail}\nالهاتف: ${targetPhone}\nالمبلغ: ${amount}`;
+      const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_BALANCE_TOKEN}/sendMessage`, {
+        method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_BALANCE_CHAT, text })
+      });
+      const data = await r.json().catch(()=>null);
+      if(data && data.ok && data.result && data.result.message_id){
+        charge.telegramMessageId = data.result.message_id;
+        saveData(DB);
+      }
+    }catch(e){ console.warn('send charge failed', e); }
+
+    return res.json({ ok:true, charge, profile: inc.profile });
+  }
+
+  // fallback: original behavior (local DB)
+  if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
   const prof = ensureProfile(personal);
   const chargeId = Date.now();
   const charge = {
@@ -615,7 +729,7 @@ setInterval(pollAllBots, 2500);
 app.get('/api/debug/db', (req,res)=> res.json({ ok:true, size: { profiles: DB.profiles.length, orders: DB.orders.length, charges: DB.charges.length, offers: DB.offers.length, notifications: (DB.notifications||[]).length }, tgOffsets: DB.tgOffsets || {} }));
 app.post('/api/debug/clear-updates', (req,res)=>{ DB.tgOffsets = {}; saveData(DB); res.json({ok:true}); });
 
-// ======= Supabase auth endpoints (auto-inserted) =======
+// ======= Supabase auth endpoints (ADDED BEFORE app.listen) =======
 
 // POST /api/sb/register
 app.post('/api/sb/register', async (req,res)=>{
@@ -624,6 +738,7 @@ app.post('/api/sb/register', async (req,res)=>{
     const { name, email, phone, password } = req.body || {};
     if(!email || !phone || !password) return res.status(400).json({ ok:false, error:'email_phone_password_required' });
 
+    // check duplicates by email or phone
     const { data:existEmail } = await supabase.from('profiles').select('id').eq('email', String(email)).limit(1).maybeSingle();
     if(existEmail) return res.status(409).json({ ok:false, error:'email_exists' });
     const { data:existPhone } = await supabase.from('profiles').select('id').eq('phone', String(phone)).limit(1).maybeSingle();
@@ -662,6 +777,10 @@ app.post('/api/sb/login', async (req,res)=>{
     return res.status(500).json({ ok:false, error:'server_error' });
   }
 });
+
+// ----------------------------------------------------------------------------------------
+// (باقي كودك الأصلي هنا — لا تغييرات إضافية على endpoints القديمة)
+// ----------------------------------------------------------------------------------------
 
 app.listen(PORT, ()=> {
   console.log(`Server listening on ${PORT}`);
