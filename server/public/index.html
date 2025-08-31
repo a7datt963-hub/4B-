@@ -128,7 +128,7 @@
     <div id="ordersStatusBar" aria-live="polite" role="status" style="display:none"></div>
   </header>
 
-<!-- notif panel -->
+  <!-- notif panel -->
   <div id="notifPanel" class="notif-panel hidden" aria-live="polite">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <h4 style="color:#FFCB01;margin:0">الإشعارات</h4>
@@ -167,6 +167,7 @@
       <div class="small-btn" id="btnCharge">شحن الرصيد</div>
     </div>
   </div>
+
   <!-- pages (كما في ملفك الأصلي، العناصر موجودة) -->
   <main id="mainContent">
     <!-- login page -->
@@ -391,7 +392,6 @@
     </div>
 
   </main>
-
 
 <script>
 /* ---------- Frontend logic ----------
@@ -1192,227 +1192,6 @@ async function ackOffer(id){
   }catch(e){ console.error('ackOffer error', e); alert('خطأ في الاتصال'); }
 }
 
-document.addEventListener('DOMContentLoaded', ()=>{
-  const loginBtn = document.getElementById('doLoginBtn');
-  if(loginBtn){
-    const createBtn = document.createElement('button');
-    createBtn.id = 'createAccountBtn';
-    createBtn.textContent = 'إنشاء حساب';
-    createBtn.style.marginLeft = '8px';
-    loginBtn.parentNode.insertBefore(createBtn, loginBtn.nextSibling);
-    createBtn.addEventListener('click', createAccount);
-  }
-
-  window.doLogin = async function(){
-    const name = document.getElementById('loginName') ? document.getElementById('loginName').value.trim() : '';
-    const email = document.getElementById('loginEmail') ? document.getElementById('loginEmail').value.trim() : '';
-    const password = document.getElementById('loginPassword') ? document.getElementById('loginPassword').value : '';
-    const phone = document.getElementById('loginPhone') ? document.getElementById('loginPhone').value.trim() : '';
-    const errEl = document.getElementById('loginError');
-    if(errEl) { errEl.style.display='none'; }
-
-    if(!email || !phone || !password){
-      if(errEl){ errEl.textContent='أدخل البريد، رقم الهاتف، وكلمة السر للمتابعة'; errEl.style.display='block'; }
-      return;
-    }
-
-    try{
-      const resp = await fetch(API_ROOT + 'api/sb/login', {
-        method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ email, phone, password })
-      });
-      const data = await resp.json().catch(()=>null);
-      if(data && data.ok && data.profile){
-        const currentProfile = {
-          name: data.profile.name || name,
-          email: data.profile.email || email,
-          phone: data.profile.phone || phone,
-          password: password,
-          balance: data.profile.balance || 0
-        };
-        localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
-        localStorage.setItem('is_logged_in','1');
-        if(typeof refreshUIFromProfile === 'function') refreshUIFromProfile();
-        if(typeof showHome === 'function') showHome();
-        alert('تم تسجيل الدخول (من السحابة)');
-        return;
-      } else if(data && data.error === 'not_found'){
-        alert('الحساب غير موجود — اضغط "إنشاء حساب" أولاً');
-        return;
-      } else if(data && data.error){
-        alert('خطأ: ' + data.error);
-        return;
-      } else {
-        alert('فشل الاتصال');
-      }
-    }catch(e){
-      console.error('doLogin(sb) error', e);
-      alert('خطأ في الاتصال');
-    }
-  };
-
-  async function createAccount(){
-    const name = document.getElementById('loginName') ? document.getElementById('loginName').value.trim() : '';
-    const email = document.getElementById('loginEmail') ? document.getElementById('loginEmail').value.trim() : '';
-    const password = document.getElementById('loginPassword') ? document.getElementById('loginPassword').value : '';
-    const phone = document.getElementById('loginPhone') ? document.getElementById('loginPhone').value.trim() : '';
-
-    if(!email || !phone || !password){
-      alert('البريد، رقم الهاتف، وكلمة السر مطلوبة لإنشاء الحساب');
-      return;
-    }
-
-    try{
-      const resp = await fetch(API_ROOT + 'api/sb/register', {
-        method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ name, email, phone, password })
-      });
-      const data = await resp.json().catch(()=>null);
-      if(data && data.ok && data.profile){
-        const currentProfile = {
-          name: data.profile.name || name,
-          email: data.profile.email || email,
-          phone: data.profile.phone || phone,
-          password: password,
-          balance: data.profile.balance || 0
-        };
-        localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
-        localStorage.setItem('is_logged_in','1');
-        if(typeof refreshUIFromProfile === 'function') refreshUIFromProfile();
-        if(typeof showHome === 'function') showHome();
-        alert('تم إنشاء الحساب وحفظه بالسحابة');
-        return;
-      } else if(data && data.error){
-        alert('فشل الإنشاء: ' + data.error);
-      } else {
-        alert('فشل الاتصال');
-      }
-    }catch(e){
-      console.error('createAccount error', e);
-      alert('خطأ في الاتصال');
-    }
-  }
-
-});
-<script>
-// اصلاح ربط زر الدخول و setting للـ personalNumber بعد sb login/register
-document.addEventListener('DOMContentLoaded', ()=>{
-
-  // اجبار زر الدخول ليركّب event handler إلى doSbLogin
-  const loginBtn = document.getElementById('doLoginBtn');
-  if(loginBtn){
-    loginBtn.removeAttribute('onclick'); // إن كان مربوطاً عبر onclick قديم
-    loginBtn.addEventListener('click', async (e)=>{
-      e.preventDefault();
-      if(typeof window.doLogin === 'function'){
-        await window.doLogin(); // هذا سيستعمل endpoint /api/sb/login كما شرحنا
-      } else {
-        // fallback: call original doLogin if exists
-        if(typeof window._originalDoLogin === 'function'){
-          window._originalDoLogin();
-        }
-      }
-    });
-  }
-
-  // تأكد أننا لا نغيّر الدالة الأصلية إن كانت مستخدمة في مكان آخر
-  if(!window._originalDoLogin && typeof window.doLogin === 'function'){
-    window._originalDoLogin = window.doLogin; // حفظ نسخة احتياطية
-  }
-
-  // عدّل دوال تسجيل الدخول و الانشاء لترسخ personalNumber = id أو email
-  // (نفترض أن doLogin و createAccount كما أضفنا سابقاً موجودتان)
-  const wrapAfterSuccess = profile => {
-    try{
-      // profile from supabase: should include id, email, phone, balance, name
-      const cur = {
-        name: profile.name || '',
-        email: profile.email || '',
-        phone: profile.phone || '',
-        password: profile._plainPassword || '', // إذا خزّنّا مؤقتاً في الواجهة
-        balance: Number(profile.balance || 0)
-      };
-      // assign a persistent personalNumber used by original UI:
-      if(profile.id) cur.personalNumber = String(profile.id);
-      else cur.personalNumber = profile.email || (profile.phone ? 'ph:' + profile.phone : 'guest');
-
-      localStorage.setItem('user_profile_v1', JSON.stringify(cur));
-      localStorage.setItem('is_logged_in','1');
-      if(typeof refreshUIFromProfile === 'function') refreshUIFromProfile();
-      if(typeof showHome === 'function') showHome();
-    }catch(e){ console.warn('wrapAfterSuccess error', e); }
-  };
-
-  // if your existing doLogin uses the /api/sb/login response, ensure it calls wrapAfterSuccess(...)
-  // but if you use the provided doLogin/createAccount from earlier, we can override them here:
-
-  // Overwrite window.doLogin to ensure wrapAfterSuccess runs
-  const originalDoLogin = window.doLogin || (async ()=>{});
-  window.doLogin = async function(){
-    // call sb login endpoint
-    try{
-      const email = document.getElementById('loginEmail') ? document.getElementById('loginEmail').value.trim() : '';
-      const phone = document.getElementById('loginPhone') ? document.getElementById('loginPhone').value.trim() : '';
-      const password = document.getElementById('loginPassword') ? document.getElementById('loginPassword').value : '';
-      if(!email || !phone || !password){ alert('أدخل البريد، الهاتف، وكلمة السر'); return; }
-
-      const resp = await fetch(API_ROOT + 'api/sb/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, phone, password })
-      });
-      const data = await resp.json().catch(()=>null);
-      if(data && data.ok && data.profile){
-        // attach plain password temporarily so wrapAfterSuccess can store it if needed
-        data.profile._plainPassword = password;
-        wrapAfterSuccess(data.profile);
-        alert('تم تسجيل الدخول من السحابة');
-      } else if(data && data.error === 'not_found'){
-        alert('الحساب غير موجود — اضغط "إنشاء حساب"');
-      } else if(data && data.error){
-        alert('خطأ: ' + data.error);
-      } else {
-        alert('فشل الاتصال بالخادم');
-      }
-    }catch(err){
-      console.error('doLogin wrapper error', err);
-      alert('خطأ في الاتصال');
-    }
-  };
-
-  // Overwrite createAccount similarly to ensure proper personalNumber set
-  const originalCreateAccount = window.createAccount || (async ()=>{});
-  window.createAccount = async function(){
-    try{
-      const name = document.getElementById('loginName') ? document.getElementById('loginName').value.trim() : '';
-      const email = document.getElementById('loginEmail') ? document.getElementById('loginEmail').value.trim() : '';
-      const phone = document.getElementById('loginPhone') ? document.getElementById('loginPhone').value.trim() : '';
-      const password = document.getElementById('loginPassword') ? document.getElementById('loginPassword').value : '';
-
-      if(!email || !phone || !password){ alert('البريد، الهاتف، وكلمة السر مطلوبة'); return; }
-
-      const resp = await fetch(API_ROOT + 'api/sb/register', {
-        method: 'POST', headers:{ 'content-type':'application/json' },
-        body: JSON.stringify({ name, email, phone, password })
-      });
-      const data = await resp.json().catch(()=>null);
-      if(data && data.ok && data.profile){
-        // store password temporarily if needed
-        data.profile._plainPassword = password;
-        wrapAfterSuccess(data.profile);
-        alert('تم إنشاء الحساب وتسجيل الدخول (من السحابة)');
-      } else if(data && data.error){
-        alert('فشل الإنشاء: ' + data.error);
-      } else {
-        alert('فشل الاتصال بالخادم');
-      }
-    }catch(err){
-      console.error('createAccount wrapper error', err);
-      alert('خطأ في الاتصال');
-    }
-  };
-
-}); // DOMContentLoaded
 </script>
 </body>
-</html>
+        </html>
