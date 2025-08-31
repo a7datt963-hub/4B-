@@ -413,12 +413,33 @@ app.get('/api/notifications/:personal', (req,res)=>{
   return res.json({ ok:true, profile:prof, offers: visibleOffers, orders:userOrders, charges:userCharges, notifications: userNotifications, canEdit: !!prof.canEdit });
 });
 
-// mark notifications as read for a user
-app.post('/api/notifications/mark-read', (req,res)=>{
-  const { personal } = req.body || {};
+// mark notifications as read for a user (supports body { personal } OR URL param)
+app.post('/api/notifications/mark-read/:personal?', (req, res) => {
+  const personal = req.body && req.body.personal ? String(req.body.personal) : (req.params.personal ? String(req.params.personal) : null);
   if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
+
   if(!DB.notifications) DB.notifications = [];
-  DB.notifications.forEach(n => { if(String(n.personal) === String(personal)) n.read = true; });
+  // وسم إشعارات المستخدم كمقروءة
+  DB.notifications.forEach(n => {
+    if(String(n.personal) === String(personal)) n.read = true;
+  });
+
+  // أيضاً نزيل علم الـ replied من الطلبات والشحنات للمستخدم — حتى لا يُحسبوا كبادج بعد القراءة
+  if(Array.isArray(DB.orders)){
+    DB.orders.forEach(o => {
+      if(String(o.personalNumber) === String(personal) && o.replied) {
+        o.replied = false;
+      }
+    });
+  }
+  if(Array.isArray(DB.charges)){
+    DB.charges.forEach(c => {
+      if(String(c.personalNumber) === String(personal) && c.replied) {
+        c.replied = false;
+      }
+    });
+  }
+
   saveData(DB);
   return res.json({ ok:true });
 });
