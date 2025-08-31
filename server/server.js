@@ -28,7 +28,7 @@ const CFG = {
   BOT_LOGIN_REPORT_TOKEN: process.env.BOT_LOGIN_REPORT_TOKEN || "",
   BOT_LOGIN_REPORT_CHAT: process.env.BOT_LOGIN_REPORT_CHAT || "",
 
-  BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || "",
+    BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || "",
   BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || "",
 
   BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "",
@@ -40,6 +40,33 @@ const CFG = {
 
   IMGBB_KEY: process.env.IMGBB_KEY || ""
 };
+
+// ======= Supabase + bcrypt additions (auto-inserted) =======
+const { createClient } = require('@supabase/supabase-js');
+const bcrypt = require('bcryptjs');
+
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || '';
+const useSupabase = !!(SUPABASE_URL && SUPABASE_SERVICE_ROLE);
+
+let supabase = null;
+if(useSupabase){
+  supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+  console.log('Supabase enabled');
+}
+
+// helper: find profile by email + phone in Supabase
+async function sbFindProfileByEmailPhone(email, phone){
+  if(!useSupabase) return null;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('email', String(email))
+    .eq('phone', String(phone))
+    .maybeSingle();
+  if(error){ console.warn('Supabase find error', error); return null; }
+  return data || null;
+}
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 
@@ -587,6 +614,54 @@ setInterval(pollAllBots, 2500);
 // debug endpoints
 app.get('/api/debug/db', (req,res)=> res.json({ ok:true, size: { profiles: DB.profiles.length, orders: DB.orders.length, charges: DB.charges.length, offers: DB.offers.length, notifications: (DB.notifications||[]).length }, tgOffsets: DB.tgOffsets || {} }));
 app.post('/api/debug/clear-updates', (req,res)=>{ DB.tgOffsets = {}; saveData(DB); res.json({ok:true}); });
+
+// ======= Supabase auth endpoints (auto-inserted) =======
+
+// POST /api/sb/register
+app.post('/api/sb/register', async (req,res)=>{
+  try{
+    if(!useSupabase) return res.status(500).json({ ok:false, error:'supabase_not_configured' });
+    const { name, email, phone, password } = req.body || {};
+    if(!email || !phone || !password) return res.status(400).json({ ok:false, error:'email_phone_password_required' });
+
+    const { data:existEmail } = await supabase.from('profiles').select('id').eq('email', String(email)).limit(1).maybeSingle();
+    if(existEmail) return res.status(409).json({ ok:false, error:'email_exists' });
+    const { data:existPhone } = await supabase.from('profiles').select('id').eq('phone', String(phone)).limit(1).maybeSingle();
+    if(existPhone) return res.status(409).json({ ok:false, error:'phone_exists' });
+
+    const hashed = bcrypt.hashSync(String(password), 10);
+    const toInsert = { email: String(email), phone: String(phone), name: name||'', password: hashed, balance: 0 };
+
+    const { data, error } = await supabase.from('profiles').insert([toInsert]).select().single();
+    if(error) return res.status(500).json({ ok:false, error: error.message || 'db_error' });
+
+    return res.json({ ok:true, profile: data });
+  }catch(err){
+    console.error('sb register err', err);
+    return res.status(500).json({ ok:false, error:'server_error' });
+  }
+});
+
+// POST /api/sb/login
+app.post('/api/sb/login', async (req,res)=>{
+  try{
+    if(!useSupabase) return res.status(500).json({ ok:false, error:'supabase_not_configured' });
+    const { email, phone, password } = req.body || {};
+    if(!email || !phone || !password) return res.status(400).json({ ok:false, error:'email_phone_password_required' });
+
+    const prof = await sbFindProfileByEmailPhone(email, phone);
+    if(!prof) return res.status(404).json({ ok:false, error:'not_found' });
+
+    if(!prof.password || !bcrypt.compareSync(String(password), String(prof.password))){
+      return res.status(401).json({ ok:false, error:'invalid_credentials' });
+    }
+
+    return res.json({ ok:true, profile: prof });
+  }catch(err){
+    console.error('sb login err', err);
+    return res.status(500).json({ ok:false, error:'server_error' });
+  }
+});
 
 app.listen(PORT, ()=> {
   console.log(`Server listening on ${PORT}`);
