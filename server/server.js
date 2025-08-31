@@ -1,8 +1,6 @@
 /**
  * server/server.js
- * نسخة معدّلة: احتفظت بكل كودك الأصلي وأضافت تكامل Supabase (register/login sb + balance helpers)
- * - لا حذف لأي جزء من الكود القديم
- * - إضافات: supabase init, bcrypt, sb helpers, تعديل /api/charge و paidWithBalance داخل /api/orders
+ * نسخة معدّلة: توحيد login/register مع Supabase عند التهيئة، والحفاظ على باقي السلوك كما هو.
  */
 
 const express = require('express');
@@ -35,14 +33,13 @@ const CFG = {
   BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "",
   BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || "",
 
-  // البوت الذي تستخدمه لإرسال رسائل مباشرة للمستخدمين (تم إضافة هذا)
   BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || "",
   BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || "",
 
   IMGBB_KEY: process.env.IMGBB_KEY || ""
 };
 
-// ======= Supabase + bcrypt additions (ADDED HERE) =======
+// ======= Supabase + bcrypt additions =======
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcryptjs');
 
@@ -188,8 +185,74 @@ app.post('/api/upload', uploadMemory.single('file'), async (req, res) => {
   }
 });
 
-// register
+/**
+ * NOTE:
+ * /api/register and /api/login were originally local-only (file DB).
+ * Below we adapt them: if Supabase is configured (useSupabase === true)
+ * they will operate against Supabase and also sync a local profile entry.
+ * Otherwise they fall back to the original local-behaviour.
+ */
+
+// register (unified)
 app.post('/api/register', async (req,res)=>{
+  // when using Supabase, create there and mirror result locally
+  if(useSupabase){
+    try{
+      const { name, email, password, phone, personalNumber } = req.body || {};
+      if(!email || !phone || !password) return res.status(400).json({ ok:false, error:'email_phone_password_required' });
+
+      // check duplicates
+      const { data:existEmail } = await supabase.from('profiles').select('id').eq('email', String(email)).limit(1).maybeSingle();
+      if(existEmail) return res.status(409).json({ ok:false, error:'email_exists' });
+      const { data:existPhone } = await supabase.from('profiles').select('id').eq('phone', String(phone)).limit(1).maybeSingle();
+      if(existPhone) return res.status(409).json({ ok:false, error:'phone_exists' });
+
+      const hashed = bcrypt.hashSync(String(password), 10);
+      const toInsert = { email: String(email), phone: String(phone), name: name||'', password: hashed, balance: 0 };
+      const { data, error } = await supabase.from('profiles').insert([toInsert]).select().single();
+      if(error) return res.status(500).json({ ok:false, error: error.message || 'db_error' });
+
+      // mirror to local DB so other endpoints (orders/notifications) can use personalNumber
+      try{
+        const localProfile = {
+          personalNumber: data.id || (personalNumber || data.email || String(Date.now())),
+          name: data.name || name || '',
+          email: data.email || email,
+          phone: data.phone || phone,
+          password: '', // don't store plain password locally when using Supabase
+          balance: Number(data.balance || 0),
+          canEdit: false
+        };
+        // if already exists with same email or phone, update
+        let existing = DB.profiles.find(p => (p.email && p.email === localProfile.email) || (p.phone && p.phone === localProfile.phone));
+        if(existing){
+          existing.name = localProfile.name;
+          existing.email = localProfile.email;
+          existing.phone = localProfile.phone;
+          existing.balance = localProfile.balance;
+        } else {
+          DB.profiles.push(localProfile);
+        }
+        saveData(DB);
+      }catch(e){ console.warn('mirror to local DB failed', e); }
+
+      // respond with a local-shaped profile for compatibility
+      const respProfile = {
+        id: data.id,
+        personalNumber: data.id,
+        email: data.email,
+        phone: data.phone,
+        name: data.name,
+        balance: Number(data.balance || 0)
+      };
+      return res.json({ ok:true, profile: respProfile });
+    }catch(err){
+      console.error('register(supabase) err', err);
+      return res.status(500).json({ ok:false, error:'server_error' });
+    }
+  }
+
+  // fallback: original local register behavior
   const { name, email, password, phone } = req.body;
   const personalNumber = req.body.personalNumber || req.body.personal || null;
   if(!personalNumber) return res.status(400).json({ ok:false, error:'missing personalNumber' });
@@ -218,8 +281,64 @@ app.post('/api/register', async (req,res)=>{
   return res.json({ ok:true, profile:p });
 });
 
-// login
+// login (unified)
 app.post('/api/login', async (req,res)=>{
+  // when using Supabase: authenticate there, then mirror/update local DB entry and return local-shaped profile
+  if(useSupabase){
+    try{
+      const { email, phone, password } = req.body || {};
+      if(!email || !phone || !password) return res.status(400).json({ ok:false, error:'email_phone_password_required' });
+
+      const prof = await sbFindProfileByEmailPhone(email, phone);
+      if(!prof) return res.status(404).json({ ok:false, error:'not_found' });
+
+      if(!prof.password || !bcrypt.compareSync(String(password), String(prof.password))){
+        return res.status(401).json({ ok:false, error:'invalid_credentials' });
+      }
+
+      // mirror/update local DB
+      try{
+        let local = DB.profiles.find(p => String(p.personalNumber) === String(prof.id) || (p.email && p.email === prof.email) || (p.phone && p.phone === prof.phone));
+        if(!local){
+          local = {
+            personalNumber: prof.id,
+            name: prof.name || '',
+            email: prof.email || '',
+            phone: prof.phone || '',
+            password: '', // no plain pw stored locally
+            balance: Number(prof.balance || 0),
+            canEdit: false
+          };
+          DB.profiles.push(local);
+        } else {
+          local.personalNumber = prof.id;
+          local.name = prof.name || local.name;
+          local.email = prof.email || local.email;
+          local.phone = prof.phone || local.phone;
+          if(typeof local.balance === 'undefined') local.balance = Number(prof.balance || 0);
+          else local.balance = Number(prof.balance || local.balance);
+        }
+        local.lastLogin = new Date().toISOString();
+        saveData(DB);
+      }catch(e){ console.warn('mirror login to local DB failed', e); }
+
+      // return local-shaped profile for compatibility with rest of app
+      const respProfile = {
+        id: prof.id,
+        personalNumber: prof.id,
+        email: prof.email,
+        phone: prof.phone,
+        name: prof.name,
+        balance: Number(prof.balance || 0)
+      };
+      return res.json({ ok:true, profile: respProfile });
+    }catch(err){
+      console.error('login(supabase) err', err);
+      return res.status(500).json({ ok:false, error:'server_error' });
+    }
+  }
+
+  // fallback: original local login behavior
   const { personalNumber, email, password } = req.body || {};
   let p = null;
   if(personalNumber) p = findProfileByPersonal(personalNumber);
@@ -322,7 +441,6 @@ app.post('/api/orders', async (req,res)=>{
     if(isNaN(price) || price <= 0) return res.status(400).json({ ok:false, error:'invalid_paid_amount' });
 
     if(useSupabase){
-      // عند استخدام Supabase نحتاج email+phone لتشغيل RPC الآتومي
       const targetEmail = req.body.email || prof.email || null;
       const targetPhone = req.body.phone || prof.phone || null;
       if(!targetEmail || !targetPhone){
@@ -332,7 +450,6 @@ app.post('/api/orders', async (req,res)=>{
       if(!deduct.ok){
         return res.status(402).json({ ok:false, error: deduct.error || 'insufficient_balance' });
       }
-      // deduced: deduct.result contains id,email,phone,balance
       if(!DB.notifications) DB.notifications = [];
       DB.notifications.unshift({
         id: String(Date.now()) + '-charge',
@@ -343,7 +460,6 @@ app.post('/api/orders', async (req,res)=>{
       });
       saveData(DB);
     } else {
-      // fallback to local DB
       if(Number(prof.balance || 0) < price) return res.status(402).json({ ok:false, error:'insufficient_balance' });
       prof.balance = Number(prof.balance || 0) - price;
       if(!DB.notifications) DB.notifications = [];
@@ -393,14 +509,13 @@ app.post('/api/orders', async (req,res)=>{
   return res.json({ ok:true, order });
 });
 
-// charge (طلب شحن رصيد) -- modified to support Supabase
+// charge (طلب شحن رصيد) -- supports supabase
 app.post('/api/charge', async (req,res)=>{
   const { personal, phone, amount, method, fileLink, email } = req.body;
   if((!personal && !email) || !amount) return res.status(400).json({ ok:false, error:'missing fields' });
 
-  // If using Supabase, we prefer to update supabase profile balance
+  // If using Supabase, update there
   if(useSupabase){
-    // determine target email & phone
     let targetEmail = email || null;
     let targetPhone = phone || null;
     if(!targetEmail && personal){
@@ -411,11 +526,9 @@ app.post('/api/charge', async (req,res)=>{
       return res.status(400).json({ ok:false, error:'need_email_and_phone_for_supabase' });
     }
 
-    // increase balance in supabase
     const inc = await sbIncreaseBalanceByEmailPhone(targetEmail, targetPhone, Number(amount));
     if(!inc.ok) return res.status(500).json({ ok:false, error: inc.error || 'sb_update_failed' });
 
-    // keep local charge record for history
     const chargeId = Date.now();
     const charge = {
       id: chargeId,
@@ -429,7 +542,6 @@ app.post('/api/charge', async (req,res)=>{
     DB.charges.unshift(charge);
     saveData(DB);
 
-    // notify telegram as before
     try{
       const text = `طلب شحن رصيد:\n\nمعرف: ${chargeId}\nالبريد: ${targetEmail}\nالهاتف: ${targetPhone}\nالمبلغ: ${amount}`;
       const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_BALANCE_TOKEN}/sendMessage`, {
@@ -445,7 +557,7 @@ app.post('/api/charge', async (req,res)=>{
     return res.json({ ok:true, charge, profile: inc.profile });
   }
 
-  // fallback: original behavior (local DB)
+  // fallback: original local behavior
   if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
   const prof = ensureProfile(personal);
   const chargeId = Date.now();
@@ -547,7 +659,7 @@ app.post('/api/notifications/clear', (req,res)=>{
   return res.json({ ok:true });
 });
 
-// poll/getUpdates logic
+// poll/getUpdates logic and bot handlers (unchanged from original)
 async function pollTelegramForBot(botToken, handler){
   try{
     const last = DB.tgOffsets[botToken] || 0;
@@ -710,15 +822,12 @@ async function genericBotReplyHandler(update){
 // poll wrapper
 async function pollAllBots(){
   try{
-    // admin commands
     if(CFG.BOT_ADMIN_CMD_TOKEN) await pollTelegramForBot(CFG.BOT_ADMIN_CMD_TOKEN, adminCmdHandler);
-    // order/balance/help/offers/login
     if(CFG.BOT_ORDER_TOKEN) await pollTelegramForBot(CFG.BOT_ORDER_TOKEN, genericBotReplyHandler);
     if(CFG.BOT_BALANCE_TOKEN) await pollTelegramForBot(CFG.BOT_BALANCE_TOKEN, genericBotReplyHandler);
     if(CFG.BOT_LOGIN_REPORT_TOKEN) await pollTelegramForBot(CFG.BOT_LOGIN_REPORT_TOKEN, genericBotReplyHandler);
     if(CFG.BOT_HELP_TOKEN) await pollTelegramForBot(CFG.BOT_HELP_TOKEN, genericBotReplyHandler);
     if(CFG.BOT_OFFERS_TOKEN) await pollTelegramForBot(CFG.BOT_OFFERS_TOKEN, genericBotReplyHandler);
-    // notify bot (direct admin notifications)
     if(CFG.BOT_NOTIFY_TOKEN) await pollTelegramForBot(CFG.BOT_NOTIFY_TOKEN, genericBotReplyHandler);
   }catch(e){ console.warn('pollAllBots error', e); }
 }
@@ -729,7 +838,7 @@ setInterval(pollAllBots, 2500);
 app.get('/api/debug/db', (req,res)=> res.json({ ok:true, size: { profiles: DB.profiles.length, orders: DB.orders.length, charges: DB.charges.length, offers: DB.offers.length, notifications: (DB.notifications||[]).length }, tgOffsets: DB.tgOffsets || {} }));
 app.post('/api/debug/clear-updates', (req,res)=>{ DB.tgOffsets = {}; saveData(DB); res.json({ok:true}); });
 
-// ======= Supabase auth endpoints (ADDED BEFORE app.listen) =======
+// ======= Supabase-only endpoints as helpers (kept for direct sb usage) =======
 
 // POST /api/sb/register
 app.post('/api/sb/register', async (req,res)=>{
@@ -738,7 +847,6 @@ app.post('/api/sb/register', async (req,res)=>{
     const { name, email, phone, password } = req.body || {};
     if(!email || !phone || !password) return res.status(400).json({ ok:false, error:'email_phone_password_required' });
 
-    // check duplicates by email or phone
     const { data:existEmail } = await supabase.from('profiles').select('id').eq('email', String(email)).limit(1).maybeSingle();
     if(existEmail) return res.status(409).json({ ok:false, error:'email_exists' });
     const { data:existPhone } = await supabase.from('profiles').select('id').eq('phone', String(phone)).limit(1).maybeSingle();
@@ -778,8 +886,9 @@ app.post('/api/sb/login', async (req,res)=>{
   }
 });
 
-// ----------------------------------------------------------------------------------------
-// (باقي كودك الأصلي هنا — لا تغييرات إضافية على endpoints القديمة)
+// Aliases: keep /api/sb/* available and also ensure backwards compatibility
+// (we handled unify in /api/register and /api/login above)
+
 // ----------------------------------------------------------------------------------------
 
 app.listen(PORT, ()=> {
