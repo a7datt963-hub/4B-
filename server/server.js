@@ -6,14 +6,15 @@
  * - يدعم تسجيل/تسجيل دخول، إنشاء طلبات/شحن، تذاكر دعم، وpoll للبوتات على Telegram
  *
  * تغييرات مُضافة:
- * - المعالجة الصحيحة لخصم الرصيد عند إرسال طلب مدفوع من الرصيد (paidWithBalance + paidAmount)
- * - عند قبول/رفض أو تحديث حالات الشحن/الطلبات عبر ردود البوت، يتم إضافة إشعارات إلى DB.notifications للمستخدم المستهدف
- * - لا يتم حذف أي شيء من الكود الأصلي، فقط إضافات منطقية
+ * - قراءة BOT_NOTIFY_TOKEN و BOT_NOTIFY_CHAT من متغيرات البيئة (process.env)
+ * - إن وصلت رسالة تحتوي "الرقم الشخصي: <digits>" يتم إضافة إشعار للمستخدم المستهدف
  *
  * تأكد من:
  * - وجود package.json مع start -> "node server/server.js" أو شغّل الملف من مجلد server
  * - ضبط متغيرات البيئة للبوتات و IMGBB_KEY إن رغبت
  */
+
+require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
@@ -45,6 +46,10 @@ const CFG = {
 
   BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "7976416746:AAGyvWAxanxhkz--4c6U_3-NA2TGBV4lJ9Y",
   BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || "7649409589",
+
+  // البوت الأخير (لإرسال رسائل إدارية إذا رغبت لاحقًا) — ضع التوكن في متغيرات البيئة
+  BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || "",
+  BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || "",
 
   IMGBB_KEY: process.env.IMGBB_KEY || "e5603dfd5675ed2b5a671577abcf6d33"
 };
@@ -572,6 +577,29 @@ async function genericBotReplyHandler(update){
     }
   }
 
+  // ----- NEW: direct notification by personal number -----
+  // إذا الرسالة تحتوي "الرقم الشخصي: 12345" نضيف إشعارًا للمستخدم المستهدف (ونزيل السطر من النص الظاهر)
+  try{
+    const mPersonal = text.match(/الرقم\s*الشخصي[:\s\-\(\)]*([0-9]+)/i);
+    if(mPersonal){
+      const personal = String(mPersonal[1]);
+      const cleanedText = text.replace(mPersonal[0], '').trim();
+      if(!DB.notifications) DB.notifications = [];
+      DB.notifications.unshift({
+        id: String(Date.now()) + '-direct',
+        personal: personal,
+        text: cleanedText || text, // إذا لم يبق نص بعد الحذف نحتفظ بالنص الأصلي
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+      saveData(DB);
+      // لا نكمل المعالجات الأخرى لهذه الرسالة
+      return;
+    }
+  }catch(e){
+    console.warn('personal direct notify parse error', e);
+  }
+
   // if message is not a reply, detect offers etc.
   if(/^عرض|^هدية/i.test(text)){
     const offerId = Date.now(); DB.offers.unshift({ id: offerId, text, createdAt: new Date().toISOString() }); saveData(DB);
@@ -587,6 +615,10 @@ async function pollAllBots(){
     await pollTelegramForBot(CFG.BOT_LOGIN_REPORT_TOKEN, genericBotReplyHandler);
     await pollTelegramForBot(CFG.BOT_HELP_TOKEN, genericBotReplyHandler);
     await pollTelegramForBot(CFG.BOT_OFFERS_TOKEN, genericBotReplyHandler);
+    // poll for notify-bot only if token موجود
+    if(CFG.BOT_NOTIFY_TOKEN && CFG.BOT_NOTIFY_TOKEN.trim().length>0){
+      await pollTelegramForBot(CFG.BOT_NOTIFY_TOKEN, genericBotReplyHandler);
+    }
   }catch(e){ console.warn('pollAllBots error', e); }
 }
 
