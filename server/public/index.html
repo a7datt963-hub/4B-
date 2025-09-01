@@ -416,7 +416,7 @@
 /* ---------- Frontend logic ---------- */
 
 /* API root dynamic — يبقى كما في ملفاتك الأصلية */
-const API_ROOT = (window.API_ROOT && window.API_ROOT.length>0) ? window.API_ROOT : (location.origin + '/');
+const API_ROOT = (window.API_ROOT && window.API_ROOT.length>0) ? window.API_ROOT : (location.origin + '/api');
 
 /* helpers */
 function $(id){ return document.getElementById(id); }
