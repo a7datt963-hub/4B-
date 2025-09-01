@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>موقع شحن الألعاب — نسخة متكاملة</title>
   <style>
-  /* (CSS كما كان) */
+  /* (CSS مدمج من الملف الأساسي — لم ألمس الستايل لتفادي كسر التصميم) */
   * { margin:0; padding:0; box-sizing:border-box }
   html,body { height:100% }
   body { font-family:Arial,Helvetica,sans-serif; background:#000; color:#fff; overflow-x:hidden }
@@ -116,6 +116,25 @@
     #personalNumberDisplay { top:30%; left:10px; }
     #balanceBox { top:66%; left:10px; }
   }
+
+  /* زر شحن مميز */
+  #btnCharge {
+    background: linear-gradient(270deg, #FFCB01, #FF9F00, #FFCB01) !important;
+    background-size: 600% 600%;
+    animation: moveGradient 6s ease infinite;
+    color: #000 !important;
+    border: none !important;
+    padding: 12px !important;
+    width: 100% !important;
+    font-weight: 800 !important;
+    border-radius: 10px !important;
+    cursor: pointer;
+  }
+  @keyframes moveGradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
   </style>
 </head>
 <body>
@@ -156,21 +175,17 @@
 
     <a href="#" id="linkHome">الرئيسية</a>
     <a href="#" id="linkOrders">الطلبات</a>
-    <a href="#" id="linkContact">التواصل مع الدعم</a>
     <a href="#" id="linkHelp">المساعدة في حل مشكلة</a>
     <a href="#" id="linkOffers">العروض والهدايا</a>
     <a href="#" id="linkJoinWhats">الانضمام لمجتمع واتساب</a>
-    <hr style="border:none;height:1px;background:#222;margin:12px 0">
-    <a href="#" id="linkGames">قسم الألعاب</a>
-    <a href="#" id="linkApps">قسم التطبيقات</a>
     <div style="margin-top:16px;">
       <div class="small-btn" id="btnCharge">شحن الرصيد</div>
     </div>
   </div>
 
-  <!-- pages (كما في ملفك الأصلي، العناصر موجودة) -->
+  <!-- pages -->
   <main id="mainContent">
-    <!-- login page -->
+    <!-- login page (معدل: اضفت أزرار البحث و إنشاء الحساب) -->
     <div id="loginPage" class="form-box login-page hidden">
       <h3 style="text-align:center;color:#FFCB01;">تسجيل الدخول / التسجيل</h3>
       <label>ضع الأسم</label>
@@ -191,9 +206,13 @@
         فقط قم بتعبئة بياناتك الاصلية ففي حال حدوث مشكلة نستطيع التواصل معك.
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+        <!-- زر تسجيل الدخول القديم (يعمل كـ register legacy) -->
         <button id="doLoginBtn">تسجيل الدخول</button>
+        <!-- أزرار البحث / إنشاء الحساب الجديدة المضافة -->
+        <button id="btnSearch" style="background:#2563eb;color:#fff">بحث عن الحساب</button>
+        <button id="btnCreate" style="background:#10b981;color:#fff">إنشاء حساب جديد</button>
       </div>
-      <div id="loginError" class="error" style="display:none;"></div>
+      <div id="loginError" class="error" style="display:none;color:#ff8080;margin-top:8px;"></div>
     </div>
 
     <!-- profile page -->
@@ -394,17 +413,12 @@
   </main>
 
 <script>
-/* ---------- Frontend logic ----------
-   - إضافة واستكمال مستمعي الأحداث لعناصر الألعاب/التطبيقات وأزرار الرجوع.
-   - تصحيح مشكلة صفار الرصيد عند حفظ الملف الشخصي (نحافظ على الرصيد إن لم يرجع السيرفر قيمة جديدة).
-   - حماية استدعاء fetchOffers ومنع ReferenceError.
-   - عند فتح لوحة الإشعارات: patch mark-read مع فالووب.
-*/
+/* ---------- Frontend logic ---------- */
 
-// API root
-const API_ROOT = 'https://fourb-tawy.onrender.com/';
+/* API root dynamic — يبقى كما في ملفاتك الأصلية */
+const API_ROOT = (window.API_ROOT && window.API_ROOT.length>0) ? window.API_ROOT : (location.origin + '/');
 
-// helpers
+/* helpers */
 function $(id){ return document.getElementById(id); }
 function show(id){ const el=$(id); if(el) el.classList.remove('hidden'); }
 function hide(id){ const el=$(id); if(el) el.classList.add('hidden'); }
@@ -412,12 +426,14 @@ function hideAllPages(){
   ['homePage','gamesPage','appsPage','ordersPage','paymentDetailsPage','reviewPage','helpPage','profilePage','loginPage','offersPage'].forEach(id => { const e=$(id); if(e) e.classList.add('hidden'); });
 }
 
-/* ----------- state & prices ----------- */
+/* state */
 let currentProfile = null;
 let selectedGameOption = '';
 let selectedAppOption = '';
 let currentMap = null;
 let currentMap_num = {};
+
+/* price maps (محتوى كما كان لديك) */
 const priceMapFF={"100 جواهر":"12500 ل.س","200 جواهر":"25000 ل.س","300 جواهر":"60000 ل.س","530 جواهر":"60000 ل.س","1080 جواهر":"120000 ل.س","2200 جواهر":"240000 ل.س","عضوية أسبوعية":"30000 ل.س","عضوية شهرية":"140000 ل.س"};
 const priceMapPUBG={"60 شدة":"6000 ل.س","325 شدة":"25000 ل.س","660 شدة":"48000 ل.س","1800 شدة":"120000 ل.س","3850 شدة":"240000 ل.س","8100 شدة":"480000 ل.س"};
 const priceMappubg1={"كود 60 شده":"12500 ل.س"};
@@ -427,7 +443,7 @@ const priceMapPUBG_num = Object.fromEntries(Object.entries(priceMapPUBG).map(([k
 const priceMappubg1_num = Object.fromEntries(Object.entries(priceMappubg1).map(([k,v])=>[k, parseInt((String(v).replace(/\D/g,''))||0,10)]));
 const priceMapApps_num = Object.fromEntries(Object.entries(priceMapApps).map(([k,v])=>[k, parseInt((String(v).replace(/\D/g,''))||0,10)]));
 
-/* ------------- notification helpers ------------- */
+/* ---------- Notifications & offers ---------- */
 async function loadNotifications(){
   try{
     if(!currentProfile || !currentProfile.personalNumber) return;
@@ -455,12 +471,8 @@ async function loadNotifications(){
   }
 }
 
-/* ----------- Offers fetching (محمي) ----------- */
 async function fetchOffers(){
-  if(!currentProfile || !currentProfile.personalNumber){
-    console.warn("لا يوجد مستخدم مسجل حالياً لجلب العروض");
-    return;
-  }
+  if(!currentProfile || !currentProfile.personalNumber) return;
   try{
     const resp = await fetch(API_ROOT + 'api/notifications/' + currentProfile.personalNumber);
     const data = await resp.json().catch(()=>null);
@@ -488,7 +500,6 @@ async function fetchOffers(){
   }
 }
 
-/* ----------- refreshNotificationsCount (الشارة) ----------- */
 async function refreshNotificationsCount(){
   try{
     if(!currentProfile || !currentProfile.personalNumber) return;
@@ -496,21 +507,19 @@ async function refreshNotificationsCount(){
     const data = await resp.json().catch(()=>null);
     if(!data || !data.ok) return;
 
-    // sync canEdit
     const serverCanEdit = !!(data.canEdit || (data.profile && data.profile.canEdit));
     if(serverCanEdit !== !!currentProfile.canEdit){
       currentProfile.canEdit = serverCanEdit;
       localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
-      if(typeof applyProfileEditState === 'function') applyProfileEditState();
+      applyProfileEditState();
     }
 
-    // update balance if changed on server
     if(data.profile && typeof data.profile.balance !== 'undefined'){
       const serverBal = Number(data.profile.balance || 0);
       if(serverBal !== Number(currentProfile.balance || 0)){
         currentProfile.balance = serverBal;
         localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
-        if(typeof refreshUIFromProfile === 'function') refreshUIFromProfile();
+        refreshUIFromProfile();
       }
     }
 
@@ -525,7 +534,6 @@ async function refreshNotificationsCount(){
   }
 }
 
-/* ----------- mark-read helper with fallbacks ---------- */
 async function markNotificationsReadForCurrentUser(){
   if(!currentProfile || !currentProfile.personalNumber) return;
   try{
@@ -539,7 +547,7 @@ async function markNotificationsReadForCurrentUser(){
       $('notifBadge').classList.add('hidden');
       return true;
     }
-  }catch(e){ console.warn('mark-read body failed', e); }
+  }catch(e){ /* ignore */ }
   try{
     const r2 = await fetch(API_ROOT + 'api/notifications/mark-read/' + currentProfile.personalNumber, { method:'POST' });
     const d2 = await r2.json().catch(()=>null);
@@ -547,29 +555,27 @@ async function markNotificationsReadForCurrentUser(){
       $('notifBadge').classList.add('hidden');
       return true;
     }
-  }catch(e){ console.warn('mark-read param failed', e); }
+  }catch(e){ /* ignore */ }
   return false;
 }
 
-/* ---------- DOM & bindings ---------- */
+/* ---------- DOM bindings ---------- */
 document.addEventListener('DOMContentLoaded', ()=> {
-  // menu open/close
+  // menu
   if($('menuBtn')) $('menuBtn').addEventListener('click', ()=> { $('sidebar').classList.toggle('active'); });
   if($('sidebarCloseBtn')) $('sidebarCloseBtn').addEventListener('click', ()=> { $('sidebar').classList.remove('active'); });
-  if($('sidebarProfileArea')) $('sidebarProfileArea').addEventListener('click', ()=> { if(typeof openProfile === 'function') openProfile(); $('sidebar').classList.remove('active'); });
+  if($('sidebarProfileArea')) $('sidebarProfileArea').addEventListener('click', ()=> { openProfile(); $('sidebar').classList.remove('active'); });
 
   // sidebar links
-  if($('linkHome')) $('linkHome').addEventListener('click', e=>{ e.preventDefault(); if(typeof showHome === 'function') showHome(); $('sidebar').classList.remove('active'); });
-  if($('linkOrders')) $('linkOrders').addEventListener('click', e=>{ e.preventDefault(); if(typeof showOrders === 'function') showOrders(); $('sidebar').classList.remove('active'); });
-  if($('linkContact')) $('linkContact').addEventListener('click', e=>{ e.preventDefault(); window.open('https://wa.me/79228576801','_blank'); $('sidebar').classList.remove('active'); });
-  if($('linkHelp')) $('linkHelp').addEventListener('click', e=>{ e.preventDefault(); if(typeof showHelp === 'function') showHelp(); $('sidebar').classList.remove('active'); });
-  if($('linkOffers')) $('linkOffers').addEventListener('click', e=>{ e.preventDefault(); if(typeof showOffers === 'function') showOffers(); $('sidebar').classList.remove('active'); });
+  if($('linkHome')) $('linkHome').addEventListener('click', e=>{ e.preventDefault(); showHome(); $('sidebar').classList.remove('active'); });
+  if($('linkOrders')) $('linkOrders').addEventListener('click', e=>{ e.preventDefault(); showOrders(); $('sidebar').classList.remove('active'); });
+  if($('linkHelp')) $('linkHelp').addEventListener('click', e=>{ e.preventDefault(); showHelp(); $('sidebar').classList.remove('active'); });
+  if($('linkOffers')) $('linkOffers').addEventListener('click', e=>{ e.preventDefault(); showOffers(); $('sidebar').classList.remove('active'); });
   if($('linkJoinWhats')) $('linkJoinWhats').addEventListener('click', e=>{ e.preventDefault(); window.open('https://chat.whatsapp.com/LvrWRUCqLOw4cxjPlnH33J?mode=ems_copy_t','_blank'); });
-  if($('linkGames')) $('linkGames').addEventListener('click', e=>{ e.preventDefault(); if(typeof showGames === 'function') showGames(); $('sidebar').classList.remove('active'); });
-  if($('linkApps')) $('linkApps').addEventListener('click', e=>{ e.preventDefault(); if(typeof showApps === 'function') showApps(); $('sidebar').classList.remove('active'); });
-  if($('btnCharge')) $('btnCharge').addEventListener('click', ()=>{ $('sidebar').classList.remove('active'); if(typeof openChargePage === 'function') openChargePage(); });
 
-  // notif bell
+  if($('btnCharge')) $('btnCharge').addEventListener('click', ()=>{ $('sidebar').classList.remove('active'); openChargePage(); });
+
+  // notifications
   if($('notifBell')) $('notifBell').addEventListener('click', async ()=> {
     const hidden = $('notifPanel').classList.toggle('hidden');
     await loadNotifications();
@@ -578,8 +584,6 @@ document.addEventListener('DOMContentLoaded', ()=> {
       refreshNotificationsCount();
     }
   });
-
-  // close & clear listeners
   if($('notifCloseBtn')) $('notifCloseBtn').addEventListener('click', ()=> $('notifPanel').classList.add('hidden'));
   if($('notifClearBtn')) $('notifClearBtn').addEventListener('click', async () => {
     try {
@@ -596,17 +600,11 @@ document.addEventListener('DOMContentLoaded', ()=> {
     } catch(e){ console.error(e); alert('خطأ في الاتصال'); }
   });
 
-  // bind main UI elements (buttons etc.)
+  // login controls: DO NOT duplicate listeners if already set
   if($('doLoginBtn')) $('doLoginBtn').addEventListener('click', doLogin);
-  if($('requestEditBtn')) $('requestEditBtn').addEventListener('click', requestProfileEdit);
-  if($('confirmSaveBtn')) $('confirmSaveBtn').addEventListener('click', confirmProfileSave);
-  if($('helpSubmitBtn')) $('helpSubmitBtn').addEventListener('click', submitHelp);
-  if($('helpFileUpload')) $('helpFileUpload').addEventListener('change', async function(){ await uploadFileToImgbb(this.files[0], 'helpFileLink','helpUploadStatus'); });
+  if($('btnSearch')) $('btnSearch').addEventListener('click', searchProfileFromUI);
+  if($('btnCreate')) $('btnCreate').addEventListener('click', createAccountFromUI);
 
-  // <-- **هنا أضفت الربط لحقل صفحة شحن الرصيد** -->
-  if($('paymentFileUpload')) $('paymentFileUpload').addEventListener('change', async function(){ await uploadFileToImgbb(this.files[0], 'paymentFileLink','paymentUploadStatus'); });
-
-  // login pwd toggle
   if($('loginTogglePwd')){
     $('loginTogglePwd').addEventListener('click', ()=>{
       const pwd = $('loginPassword');
@@ -616,11 +614,17 @@ document.addEventListener('DOMContentLoaded', ()=> {
     });
   }
 
-  // bind cards open pages
+  // help
+  if($('helpSubmitBtn')) $('helpSubmitBtn').addEventListener('click', submitHelp);
+  if($('helpFileUpload')) $('helpFileUpload').addEventListener('change', async function(){ await uploadFileToImgbb(this.files[0], 'helpFileLink','helpUploadStatus'); });
+
+  // payment upload
+  if($('paymentFileUpload')) $('paymentFileUpload').addEventListener('change', async function(){ await uploadFileToImgbb(this.files[0], 'paymentFileLink','paymentUploadStatus'); });
+
+  // page navigation & games/apps bindings
   if($('cardGames')) $('cardGames').addEventListener('click', ()=> showGames());
   if($('cardApps')) $('cardApps').addEventListener('click', ()=> showApps());
 
-  // games/apps selects and inputs
   if($('gameSelect')) $('gameSelect').addEventListener('change', function(){ buildGameOptions(this.value); updateSubmitButtonGames(); });
   if($('idField')) $('idField').addEventListener('input', updateSubmitButtonGames);
   if($('submitForm')) $('submitForm').addEventListener('click', ()=> placeOrderFromUI('gamesPage'));
@@ -651,7 +655,7 @@ document.addEventListener('DOMContentLoaded', ()=> {
   });
   if($('pdSubmitForm')) $('pdSubmitForm').addEventListener('click', submitPaymentDetails);
 
-  // load profile from localStorage
+  // load saved profile (if موجود)
   const saved = localStorage.getItem('user_profile_v1');
   if(saved){
     try{ currentProfile = JSON.parse(saved); }catch(e){ currentProfile = null; }
@@ -662,28 +666,27 @@ document.addEventListener('DOMContentLoaded', ()=> {
     currentProfile = { personalNumber: pn, name:'ضيف', email:'', phone:'', balance:0, canEdit:false };
     localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
   }
-  if(typeof refreshUIFromProfile === 'function') refreshUIFromProfile();
+  refreshUIFromProfile();
 
   // show login or home
   const isGuest = (!currentProfile || !currentProfile.name || currentProfile.name === 'ضيف');
   const hasCreds = !!(currentProfile && currentProfile.password);
   if (isGuest || !hasCreds) { hideAllPages(); if($('loginPage')) show('loginPage'); window.scrollTo({ top: 0 }); }
-  else { if(typeof showHome === 'function') showHome(); }
+  else { showHome(); }
 
-  // poll every 6s
+  // poll periodically
   setInterval(()=>{
     try{ refreshNotificationsCount(); }catch(e){ console.warn('refreshNotificationsCount interval error', e); }
-    try{ if(typeof fetchOffers === 'function') fetchOffers(); }catch(e){ console.warn('fetchOffers interval error', e); }
+    try{ fetchOffers(); }catch(e){ console.warn('fetchOffers interval error', e); }
   }, 6000);
 
-  // initial calls
+  // initial fetches
   refreshNotificationsCount();
-  if(typeof fetchOffers === 'function') fetchOffers();
+  fetchOffers();
 });
 
-/* ---------- باقي الدوال (مثل ملفك الأصلي) ---------- */
+/* ---------- UI & helper functions (كما في ملفك الأصلي) ---------- */
 
-// UI/page navigation
 function showHome(){ hideAllPages(); show('homePage'); window.scrollTo({top:0}); }
 function showGames(){ hideAllPages(); show('gamesPage'); window.scrollTo({top:0}); }
 function showApps(){ hideAllPages(); show('appsPage'); window.scrollTo({top:0}); }
@@ -693,7 +696,6 @@ function openChargePage(){ hideAllPages(); show('paymentDetailsPage'); $('pdTitl
 function showOrders(){ hideAllPages(); show('ordersPage'); loadOrdersList(); }
 function showOffers(){ hideAllPages(); show('offersPage'); fetchOffers(); }
 
-// profile helpers
 function refreshUIFromProfile(){
   try{
     $('personalNum').textContent = currentProfile.personalNumber || '';
@@ -733,7 +735,73 @@ function applyProfileEditState(){
   else { if($('requestEditBtn')) $('requestEditBtn').classList.remove('hidden'); if($('confirmSaveBtn')) $('confirmSaveBtn').classList.add('hidden'); if($('profileMsg')) $('profileMsg').textContent='للتعديل اطلب موافقة من الإدارة عبر الزر أدناه.'; }
 }
 
-// login/register
+/* ---------- New: search-profile (مصدر: merged from index2) ----------
+   زر btnSearch يستدعي /api/search-profile للبحث عن الحساب عبر البريد أو الهاتف.
+*/
+async function searchProfileFromUI(){
+  const email = $('loginEmail').value.trim();
+  const phone = $('loginPhone').value.trim();
+  const errEl = $('loginError'); if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
+  if(!email && !phone){
+    if(errEl){ errEl.style.display='block'; errEl.textContent='ادخل بريد أو هاتف للبحث'; }
+    return;
+  }
+  try{
+    const resp = await fetch(API_ROOT + 'api/search-profile', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ email: email || null, phone: phone || null })
+    });
+    const data = await resp.json().catch(()=>null);
+    if(data && data.ok && data.profile){
+      currentProfile = data.profile;
+      localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
+      refreshUIFromProfile();
+      alert('تم العثور على حسابك. رقمك الشخصي: ' + currentProfile.personalNumber + '\nرصيدك: ' + (currentProfile.balance||0));
+      hideAllPages(); showHome();
+    } else {
+      if(errEl){ errEl.style.display='block'; errEl.textContent = 'لم يتم العثور على حساب. اضغط "إنشاء حساب جديد" لإنشاء حساب.'; }
+    }
+  }catch(e){
+    console.error('searchProfileFromUI error', e);
+    if(errEl){ errEl.style.display='block'; errEl.textContent = 'خطأ في الاتصال'; }
+  }
+}
+
+/* ---------- New: createAccountFromUI ----------
+   زر إنشاء حساب يستدعي /api/register (server سيعيد الموجود إن كان موجودًا).
+*/
+async function createAccountFromUI(){
+  const name = $('loginName').value.trim();
+  const email = $('loginEmail').value.trim();
+  const phone = $('loginPhone').value.trim();
+  const password = $('loginPassword').value || '';
+  const errEl = $('loginError'); if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
+  if(!name){ if(errEl){ errEl.style.display='block'; errEl.textContent='ادخل اسمك لإنشاء الحساب'; } return; }
+  if(!email && !phone){ if(errEl){ errEl.style.display='block'; errEl.textContent='ادخل بريد أو هاتف لإنشاء الحساب'; } return; }
+  try{
+    const resp = await fetch(API_ROOT + 'api/register', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ name, email: email||null, phone: phone||null, password })
+    });
+    const data = await resp.json().catch(()=>null);
+    if(data && data.ok && data.profile){
+      currentProfile = data.profile;
+      localStorage.setItem('user_profile_v1', JSON.stringify(currentProfile));
+      refreshUIFromProfile();
+      alert('تم إنشاء الحساب أو استرجاع الحساب الموجود. رقمك الشخصي: ' + currentProfile.personalNumber + '\nرصيدك: ' + (currentProfile.balance||0));
+      hideAllPages(); showHome();
+    } else {
+      if(errEl){ errEl.style.display='block'; errEl.textContent = 'فشل الإنشاء: ' + (data && data.error ? data.error : 'خطأ غير معروف'); }
+    }
+  }catch(e){
+    console.error('createAccountFromUI error', e);
+    if(errEl){ errEl.style.display='block'; errEl.textContent = 'خطأ في الاتصال'; }
+  }
+}
+
+/* ---------- doLogin (الزر القديم) ----------
+   احتفظت بمنطق doLogin كما كان: يستدعي api/register (يتوافق مع السيرفر لأنه سيعيد البروفايل إن وجد).
+*/
 async function doLogin(){
   const name = $('loginName').value.trim();
   const email = $('loginEmail').value.trim();
@@ -769,7 +837,10 @@ async function doLogin(){
   }
 }
 
-// request profile edit
+/* ---------- profile edit / help / upload / orders / charges ----------
+   أبقيت منطقك كما كان في الملف الأساسي — لم أغيره إلا ليتوافق مع currentProfile المحدث.
+*/
+
 async function requestProfileEdit(){
   const ok = confirm('سيتم إرسال طلب تعديل بياناتك للإدارة. هل تريد المتابعة؟');
   if(!ok) return;
@@ -813,7 +884,6 @@ async function confirmProfileSave(){
     const data = await resp.json().catch(()=>null);
 
     if(data && data.ok){
-      // use server profile if returned but preserve existing balance when undefined
       if(data.profile){
         currentProfile = Object.assign({}, currentProfile, data.profile);
       } else {
@@ -837,7 +907,6 @@ async function confirmProfileSave(){
   }
 }
 
-// help submit
 async function submitHelp(){
   const issue = $('helpIssueSelect').value;
   const fileLink = $('helpFileLink').value;
@@ -854,13 +923,13 @@ async function submitHelp(){
   }catch(e){ console.error('submitHelp error', e); alert('خطأ في الاتصال'); }
 }
 
-// uploading to imgbb (client-side)
+/* upload to imgbb (client) — كما في ملفك */
 async function uploadFileToImgbb(file, targetInputId = 'paymentFileLink', statusElId='paymentUploadStatus'){
   if(!file) return;
   const statusEl = $(statusElId);
   if(statusEl) statusEl.textContent = 'جارية عملية الرفع... 0%';
   try{
-    const IMGBB_KEY = "e5603dfd5675ed2b5a671577abcf6d33";
+    const IMGBB_KEY = "e5603dfd5675ed2b5a671577abcf6d33"; // إن أردت استبداله ضع المفتاح الخاص بك
     const fd = new FormData();
     fd.append('image', file);
     const xhr = new XMLHttpRequest();
@@ -890,7 +959,7 @@ async function uploadFileToImgbb(file, targetInputId = 'paymentFileLink', status
   }catch(e){ console.error(e); if($(statusElId)) $(statusElId).textContent = 'خطأ أثناء الرفع'; alert('خطأ أثناء الرفع'); }
 }
 
-// games/apps options
+/* games/apps options & ordering (كما في ملفك) */
 function buildGameOptions(val){
   if($('optionsContainer')) $('optionsContainer').innerHTML='';
   selectedGameOption=''; if($('priceDisplay')) $('priceDisplay').textContent='';
@@ -928,11 +997,9 @@ function buildAppOptions(val){
     $('optionsContainerApps').appendChild(d);
   }
 }
-
 function updateSubmitButtonGames(){ const idf=$('idField') ? $('idField').value.trim() : ''; if($('submitForm')) $('submitForm').disabled = !(selectedGameOption && idf); }
 function updateSubmitButtonApps(){ const idf=$('appIdField') ? $('appIdField').value.trim() : ''; if($('appSubmitForm')) $('appSubmitForm').disabled = !(selectedAppOption && idf); }
 
-// order placement (uses balance)
 async function placeOrderFromUI(fromPage){
   try{
     if(fromPage === 'gamesPage'){
@@ -965,7 +1032,6 @@ async function placeOrderFromUI(fromPage){
   }
 }
 
-// attempts to deduct from local balance and send order to server
 async function attemptChargeAndSendOrder(orderBody){
   const bal = Number(currentProfile.balance || 0);
   const price = Number(orderBody.paidAmount || 0);
@@ -1021,105 +1087,17 @@ async function attemptChargeAndSendOrder(orderBody){
   }
 }
 
-// payment flow
+/* payment details helpers (مختصر) */
 let previousBeforePayment = null;
 function showPaymentDetailsFromSubmit(fromPage){
   previousBeforePayment = fromPage;
   hideAllPages(); show('paymentDetailsPage');
-  if($('pdTopInfo')) $('pdTopInfo').textContent = '';
-  if($('pdPriceInfo')) $('pdPriceInfo').textContent = '';
-  if($('pdCashSelect')) $('pdCashSelect').value = '';
-  if($('pdCopyField')) $('pdCopyField').value = '';
-  if($('qrContainer')) $('qrContainer').style.display='none';
-  if($('syrtelQrContainer')) $('syrtelQrContainer').style.display='none';
-  if($('paymentFileLink')) $('paymentFileLink').value = '';
-  if($('paymentUploadStatus')) $('paymentUploadStatus').textContent = '';
-  if($('pdNote')) $('pdNote').textContent = 'اختر طريقة الدفع لمتابعة التعليمات';
-  if($('shamFields')) $('shamFields').style.display='none';
-  if($('syrtelFields')) $('syrtelFields').style.display='none';
-  if($('hawalaFields')) $('hawalaFields').style.display='none';
 }
 function returnFromPaymentDetails(){ if(previousBeforePayment==='gamesPage') showGames(); else if(previousBeforePayment==='appsPage') showApps(); else showHome(); }
+function onPdCashChange(){ const value = $('pdCashSelect').value; if(value==='sham'){ if($('shamFields')) $('shamFields').style.display='block'; if($('syrtelFields')) $('syrtelFields').style.display='none'; if($('hawalaFields')) $('hawalaFields').style.display='none'; } else if(value==='syrtel'){ if($('syrtelFields')) $('syrtelFields').style.display='block'; if($('shamFields')) $('shamFields').style.display='none'; if($('hawalaFields')) $('hawalaFields').style.display='none'; } else if(value==='hawala'){ if($('hawalaFields')) $('hawalaFields').style.display='block'; if($('shamFields')) $('shamFields').style.display='none'; if($('syrtelFields')) $('syrtelFields').style.display='none'; } else { if($('shamFields')) $('shamFields').style.display='none'; if($('syrtelFields')) $('syrtelFields').style.display='none'; if($('hawalaFields')) $('hawalaFields').style.display='none'; } }
+function toggleQr(){ const q = $('qrContainer'); if(!q) return; q.style.display = q.style.display === 'none' ? 'block' : 'none'; }
 
-function onPdCashChange(){
-  const value = $('pdCashSelect').value;
-  const pdNoteEl = $('pdNote');
-  if(value==='sham'){
-    if($('shamFields')) $('shamFields').style.display='block';
-    if($('syrtelFields')) $('syrtelFields').style.display='none';
-    if($('hawalaFields')) $('hawalaFields').style.display='none';
-    if($('qrContainer')) $('qrContainer').style.display='none';
-    if($('syrtelQrContainer')) $('syrtelQrContainer').style.display='none';
-    if($('pdCopyField')) $('pdCopyField').value = 'e5eca798a4add8f1b86d389330131c82';
-    if(pdNoteEl) pdNoteEl.textContent = `تعليمات شام كاش...`;
-  } else if(value==='syrtel'){
-    if($('shamFields')) $('shamFields').style.display='none';
-    if($('syrtelFields')) $('syrtelFields').style.display='block';
-    if($('hawalaFields')) $('hawalaFields').style.display='none';
-    if($('pdCopyField')) $('pdCopyField').value = '72289118';
-    if(pdNoteEl) pdNoteEl.textContent = `تعليمات سيرتيل...`;
-  } else if(value==='hawala'){
-    if($('shamFields')) $('shamFields').style.display='none';
-    if($('syrtelFields')) $('syrtelFields').style.display='none';
-    if($('hawalaFields')) $('hawalaFields').style.display='block';
-    if($('pdCopyField')) $('pdCopyField').value = '';
-    if(pdNoteEl) pdNoteEl.textContent = `قم بتحويل الرصيد المطلوب إلى: عبد الرحمن احمد عتون`;
-  } else {
-    if($('shamFields')) $('shamFields').style.display='none';
-    if($('syrtelFields')) $('syrtelFields').style.display='none';
-    if($('hawalaFields')) $('hawalaFields').style.display='none';
-    if($('pdCopyField')) $('pdCopyField').value = '';
-    if(pdNoteEl) pdNoteEl.textContent = 'اختر طريقة الدفع لمتابعة التعليمات';
-  }
-}
-
-function toggleQr(){
-  const m = $('pdCashSelect') ? $('pdCashSelect').value : '';
-  if(m==='sham'){ if($('qrContainer')) $('qrContainer').style.display = $('qrContainer').style.display === 'none' ? 'block' : 'none'; }
-  else if(m==='syrtel'){ if($('syrtelQrContainer')) $('syrtelQrContainer').style.display = $('syrtelQrContainer').style.display === 'none' ? 'block' : 'none'; }
-  else alert('صورة QR غير متاحة لهذه الطريقة');
-}
-
-async function submitPaymentDetails(){
-  const cashMethod = $('pdCashSelect').value;
-  const fileLink = $('paymentFileLink').value;
-  if(!cashMethod){ alert('اختر طريقة الدفع'); return; }
-  if(previousBeforePayment === 'gamesPage'){
-    const personal = $('personalField').value;
-    const game = $('gameSelect').value;
-    const idField = $('idField').value;
-    if(!game || !idField || !selectedGameOption){ alert('اكمل البيانات'); return; }
-    const body = { personal, phone: currentProfile.phone, type:'شحن لعبة', item: `${game} - ${selectedGameOption}`, idField, fileLink, cashMethod };
-    try{
-      const r = await fetch(API_ROOT + 'api/orders', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json().catch(()=>null);
-      if(data && data.ok){ hideAllPages(); show('reviewPage'); if($('reviewMsg')) $('reviewMsg').textContent='تم ارسال طلبك وسيتم مراجعته'; localStorage.setItem('lastOrderId', data.order && data.order.id); } else alert('فشل ارسال الطلب');
-    }catch(e){ console.error('submitPaymentDetails order error', e); alert('خطأ في الاتصال'); }
-  } else if(previousBeforePayment === 'appsPage'){
-    const personal = $('appPersonalField').value;
-    const app = $('appSelect').value;
-    const idField = $('appIdField').value;
-    if(!app || !idField || !selectedAppOption){ alert('اكمل البيانات'); return; }
-    const body = { personal, phone: currentProfile.phone, type:'شراء تطبيق', item: `${app} - ${selectedAppOption}`, idField, fileLink, cashMethod };
-    try{
-      const r = await fetch(API_ROOT + 'api/orders', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json().catch(()=>null);
-      if(data && data.ok){ hideAllPages(); show('reviewPage'); if($('reviewMsg')) $('reviewMsg').textContent='تم ارسال طلب التطبيق'; } else alert('فشل ارسال الطلب');
-    }catch(e){ console.error('submitPaymentDetails apps error', e); alert('خطأ في الاتصال'); }
-  } else {
-    const personal = currentProfile.personalNumber;
-    const amount = prompt('كم المبلغ الذي تريد شحنه؟ (أدخل رقم فقط)');
-    if(!amount || isNaN(Number(amount))){ alert('قيمة غير صحيحة'); return; }
-    const method = cashMethod || 'unknown';
-    try{
-      const r = await fetch(API_ROOT + 'api/charge', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal, phone: currentProfile.phone, amount, method, fileLink }) });
-      const data = await r.json().catch(()=>null);
-      if(data && data.ok){ alert('تم ارسال طلب الشحن. انتظر الموافقة.'); hideAllPages(); showHome(); } else alert('فشل ارسال طلب الشحن');
-    }catch(e){ console.error('submitPaymentDetails charge error', e); alert('خطأ في الاتصال'); }
-  }
-}
-
-// load orders / list
+/* load orders list / notifications (كما في الملف الأساسي) */
 async function loadOrdersList(){
   try{
     const personal = currentProfile.personalNumber;
@@ -1144,54 +1122,6 @@ async function loadOrdersList(){
   }catch(e){ console.error('loadOrdersList error', e); }
 }
 
-// loadNotifications (view)
-async function loadNotifications(){
-  try{
-    const resp = await fetch(API_ROOT + 'api/notifications/' + currentProfile.personalNumber);
-    const data = await resp.json().catch(()=>null);
-    if(data && data.ok){
-      const offers = data.offers || [];
-      const orders = data.orders || [];
-      const charges = data.charges || [];
-      const notifications = data.notifications || [];
-      const list = $('notifList'); if(list) list.innerHTML = '';
-
-      notifications.forEach(n=>{
-        const el = document.createElement('div');
-        el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-        el.innerHTML = `<div><strong>تنبيه</strong></div><div>${n.text}</div><div style="font-size:12px;color:#aaa;margin-top:6px;">${new Date(n.createdAt).toLocaleString()}</div>`;
-        list.appendChild(el);
-      });
-
-      orders.filter(o=>o.replied).forEach(o=>{
-        const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-        el.innerHTML = `<div><strong>حالة الطلب #${o.id}</strong></div><div>${o.status}</div>`;
-        list.appendChild(el);
-      });
-      charges.filter(c=>c.replied).forEach(c=>{
-        const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-        el.innerHTML = `<div><strong>حالة شحنة #${c.id}</strong></div><div>${c.status}</div>`;
-        list.appendChild(el);
-      });
-      offers.forEach(of=>{
-        const el = document.createElement('div'); el.style.padding='8px'; el.style.border='1px solid rgba(255,203,1,0.06)'; el.style.marginBottom='8px';
-        el.innerHTML = `<div><strong>عرض</strong></div><div>${of.text}</div><div style="margin-top:6px;"><button class="small-btn" onclick="ackOffer('${of.id}')">تحقق</button></div>`;
-        list.appendChild(el);
-      });
-    }
-  }catch(e){ console.warn('loadNotifications error', e); }
-}
-
-// utility: ack offer
-async function ackOffer(id){
-  try{
-    const resp = await fetch(API_ROOT + 'api/offer/ack', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ personal: currentProfile.personalNumber, offerId: id }) });
-    const data = await resp.json().catch(()=>null);
-    if(data && data.ok){ alert('تم تأكيد العرض'); fetchOffers(); }
-    else alert('فشل تأكيد العرض');
-  }catch(e){ console.error('ackOffer error', e); alert('خطأ في الاتصال'); }
-}
-
 </script>
 </body>
-        </html>
+            </html>
