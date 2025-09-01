@@ -654,6 +654,27 @@ document.addEventListener('DOMContentLoaded', ()=> {
     navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(v).then(()=> alert('تم النسخ')) : (function(){ try{ const ta = document.createElement('textarea'); ta.value=v; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); alert('تم النسخ'); }catch(e){ alert('فشل النسخ'); } })();
   });
   if($('pdSubmitForm')) $('pdSubmitForm').addEventListener('click', submitPaymentDetails);
+async function submitPaymentDetails(e) {
+  e.preventDefault();
+  
+  const phone = document.getElementById("chargePhone").value.trim();
+  const amount = parseFloat(document.getElementById("chargeAmount").value);
+  const method = document.getElementById("chargeMethod").value;
+
+  try {
+    const resp = await fetch(API_ROOT + "api/charges", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, amount, method })
+    });
+
+    const data = await resp.json();
+    alert("✅ تمت العملية: " + JSON.stringify(data));
+  } catch (err) {
+    console.error(err);
+    alert("❌ حدث خطأ أثناء إرسال طلب الشحن");
+  }
+}
 
   // load saved profile (if موجود)
   const saved = localStorage.getItem('user_profile_v1');
@@ -1124,4 +1145,4 @@ async function loadOrdersList(){
 
 </script>
 </body>
-            </html>
+  </html>
