@@ -1143,6 +1143,115 @@ async function loadOrdersList(){
   }catch(e){ console.error('loadOrdersList error', e); }
 }
 
+if (document.getElementById('pdSubmitForm')) {
+  document.getElementById('pdSubmitForm').addEventListener('click', submitPaymentDetails);
+}
+
+/* --- ضع هذا داخل نفس وسم <script> بعد السطر الذي يربط pdSubmitForm --- */
+
+async function submitPaymentDetails(e){
+  try {
+    e?.preventDefault?.();
+  } catch(e){/* ignore if no event */ }
+
+  // عناصر الصفحة الموجودة في index.html عندك
+  const personal = $('personalNum') ? $('personalNum').textContent.trim() : (window.currentProfile && window.currentProfile.personalNumber) || '';
+  const method = $('pdCashSelect') ? $('pdCashSelect').value : '';
+  // pdPriceInfo أو pdNote تستخدم لعرض المبلغ عندك في الواجهة
+  const amountText = ($('pdPriceInfo') && $('pdPriceInfo').textContent) ? $('pdPriceInfo').textContent : (($('pdNote') && $('pdNote').textContent) || '');
+  // حاول استخرج رقم من النص
+  const amount = (function(v){
+    if(!v) return 0;
+    const n = String(v).replace(/[^\d.-]/g,'');
+    const num = parseFloat(n);
+    return isNaN(num) ? 0 : num;
+  })(amountText);
+
+  const fileLink = $('paymentFileLink') ? $('paymentFileLink').value.trim() : '';
+
+  if(!personal || personal === '0000000'){
+    alert('الرجاء تسجيل الدخول أو استرجاع حسابك أولاً.');
+    return;
+  }
+  if(!method){
+    alert('الرجاء اختيار طريقة الدفع.');
+    return;
+  }
+  if(!amount || amount <= 0){
+    alert('المبلغ غير صحيح، يرجى اختيار المنتج أو إدخال المبلغ.');
+    return;
+  }
+
+  try {
+    const resp = await fetch(API_ROOT + 'api/charges', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        personal: personal,
+        phone: '',            // إن أردت استخدم رقم من واجهتك إن وُجد
+        amount: amount,
+        method: method,
+        fileLink: fileLink
+      })
+    });
+
+    const text = await resp.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch(e){ /* إذا رجع HTML أو Not Found */ }
+
+    if(resp.ok){
+      alert('✅ تم إرسال طلب الشحن بنجاح.');
+      // إذا تحب تحدث واجهة الطلبات: نفّذ هنا منطق إعادة التحميل / إظهار رسالة نجاح جميلة
+    } else {
+      const err = data && (data.error || data.message) ? (data.error || data.message) : text || 'خطأ غير معروف';
+      alert('❌ فشل إرسال الطلب: ' + err);
+    }
+  } catch (err) {
+    console.error('submitPaymentDetails err', err);
+    alert('❌ لم يتمكن من الوصول للسيرفر: ' + (err.message || err));
+  }
+}
+
+
+async function submitSupportRequest(e){
+  try { e?.preventDefault?.(); } catch(e){}
+
+  const personal = $('helpPersonalField') ? $('helpPersonalField').value.trim() : ($('personalNum') ? $('personalNum').textContent.trim() : '');
+  const text = $('helpDesc') ? $('helpDesc').value.trim() : '';
+
+  if(!personal || personal === '0000000'){
+    alert('الرجاء تسجيل الدخول أو استرجاع حسابك أولاً.');
+    return;
+  }
+  if(!text){
+    alert('الرجاء كتابة وصف المشكلة.');
+    return;
+  }
+
+  try {
+    const resp = await fetch(API_ROOT + 'api/support', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ personal, text })
+    });
+
+    const txt = await resp.text();
+    let data = null;
+    try{ data = JSON.parse(txt); }catch(e){}
+
+    if(resp.ok){
+      alert('✅ تم إرسال المشكلة بنجاح. شكراً لتواصلك.');
+      if($('helpDesc')) $('helpDesc').value = '';
+    } else {
+      const err = (data && (data.error || data.message)) || txt || 'خطأ غير معروف';
+      alert('❌ فشل إرسال المشكلة: ' + err);
+    }
+  } catch(err){
+    console.error('submitSupportRequest err', err);
+    alert('❌ لم يتمكن من الوصول للسيرفر: ' + (err.message || err));
+  }
+}
+
 </script>
 </body>
-  </html>
+      </html>
