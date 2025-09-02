@@ -1,27 +1,28 @@
-// server.js — Supabase-enabled backend (cleaned & deduplicated)
+// server.js — Supabase-only backend (cleaned & deduplicated)
 // Req: express, cors, node-fetch@2, multer, @supabase/supabase-js
-// Usage: set SUPABASE_URL and SUPABASE_SERVICE_KEY to enable Supabase storage.
-// Place in project root and run: node server.js
+// Usage: set SUPABASE_URL and SUPABASE_SERVICE_KEY and other BOT_* env vars.
+// Run: node server.js
 
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch'); // v2
-const fs = require('fs');
-const path = require('path');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+app.use(express.json({ limit: '30mb' }));
+app.use(express.urlencoded({ extended: true, limit: '30mb' }));
 
 // ---------------- CONFIG ----------------
 const CFG = {
   SUPABASE_URL: process.env.SUPABASE_URL || '',
   SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY || '',
+  SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET || 'uploads',
   BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || '',
   BOT_ORDER_CHAT: process.env.BOT_ORDER_CHAT || '',
   BOT_BALANCE_TOKEN: process.env.BOT_BALANCE_TOKEN || '',
@@ -30,43 +31,23 @@ const CFG = {
   BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || '',
   BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || '',
   BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || '',
-  IMGBB_KEY: process.env.IMGBB_KEY || ''
+  BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || '',
+  BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || '',
+  IMGBB_KEY: process.env.IMGBB_KEY || '',
+  ADMIN_ALLOWED_USERS: (() => {
+    try { return process.env.ADMIN_ALLOWED_USERS ? JSON.parse(process.env.ADMIN_ALLOWED_USERS) : []; } catch (e) { return []; }
+  })()
 };
 
-// ---------------- Supabase client (optional) ----------------
-const useSupabase = !!(CFG.SUPABASE_URL && CFG.SUPABASE_SERVICE_KEY);
-let sb = null;
-if (useSupabase) {
-  try {
-    sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_SERVICE_KEY, { global: { fetch } });
-    console.log('Supabase: enabled');
-  } catch (e) {
-    console.warn('Supabase init failed — falling back to local DB', e);
-  }
-} else {
-  console.log('Supabase: not configured — using local data.json fallback');
+// must have Supabase configured (per request)
+if (!CFG.SUPABASE_URL || !CFG.SUPABASE_SERVICE_KEY) {
+  console.error('FATAL: SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables.');
+  process.exit(1);
 }
 
-// ---------------- Local DB fallback ----------------
-const DATA_FILE = path.join(__dirname, 'data.json');
-function loadData() {
-  try {
-    if (!fs.existsSync(DATA_FILE)) {
-      const init = { profiles: [], orders: [], charges: [], offers: [], notifications: [], profileEditRequests: [], blocked: [] };
-      fs.writeFileSync(DATA_FILE, JSON.stringify(init, null, 2));
-      return init;
-    }
-    const raw = fs.readFileSync(DATA_FILE, 'utf8') || '{}';
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error('loadData error', e);
-    return { profiles: [], orders: [], charges: [], offers: [], notifications: [], profileEditRequests: [], blocked: [] };
-  }
-}
-function saveData(d) {
-  try { fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 2)); } catch (e) { console.error('saveData error', e); }
-}
-let DB = loadData();
+// ---------------- Supabase client ----------------
+const sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_SERVICE_KEY, { global: { fetch } });
+console.log('Supabase client initialized.');
 
 // ---------------- Helpers ----------------
 function mapSbProfileToResponse(row) {
@@ -85,15 +66,18 @@ function mapSbProfileToResponse(row) {
 }
 
 async function genUniquePersonalNumber() {
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 20; i++) {
     const n = String(Math.floor(1000000 + Math.random() * 9000000));
-    if (useSupabase && sb) {
-      try {
-        const { data } = await sb.from('profiles').select('personal_number').eq('personal_number', n).limit(1).maybeSingle();
-        if (!data) return n;
-      } catch (e) { /* ignore */ }
+    try {
+      const { data, error } = await sb.from('profiles').select('personal_number').eq('personal_number', n).limit(1).maybeSingle();
+      if (error) {
+        console.warn('genUniquePersonalNumber supabase select err', error);
+        continue;
+      }
+      if (!data) return n;
+    } catch (e) {
+      console.warn('genUniquePersonalNumber exception', e);
     }
-    if (!DB.profiles.some(p => String(p.personalNumber) === n || String(p.personal_number) === n)) return n;
   }
   return String(Date.now()).slice(-9);
 }
@@ -101,37 +85,22 @@ async function genUniquePersonalNumber() {
 async function findProfileByPersonal(personal) {
   if (!personal) return null;
   try {
-    if (useSupabase && sb) {
-      const { data, error } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-      if (error) console.warn('findProfileByPersonal sb error', error);
-      if (data) return mapSbProfileToResponse(data);
-      return null;
-    }
-  } catch (e) { console.warn('findProfileByPersonal supabase', e); }
-  const p = DB.profiles.find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
-  if (!p) return null;
-  return {
-    personalNumber: p.personalNumber || p.personal_number,
-    name: p.name, email: p.email, phone: p.phone, password: p.password,
-    balance: Number(p.balance || 0), canEdit: !!p.canEdit, lastLogin: p.lastLogin
-  };
+    const { data, error } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+    if (error) console.warn('findProfileByPersonal sb error', error);
+    return data ? mapSbProfileToResponse(data) : null;
+  } catch (e) {
+    console.warn('findProfileByPersonal exception', e);
+    return null;
+  }
 }
 
 async function findProfileByIdentity({ name, email, phone }) {
-  if (useSupabase && sb) {
-    try {
-      const q = sb.from('profiles').select('*').ilike('name', String(name || '')).eq('email', String(email || '')).eq('phone', String(phone || '')).limit(1).maybeSingle();
-      const { data, error } = await q;
-      if (error) console.warn('findProfileByIdentity supabase err', error);
-      if (data) return mapSbProfileToResponse(data);
-    } catch (e) { console.warn('findProfileByIdentity supabase', e); }
-  } else {
-    const p = DB.profiles.find(x =>
-      String(x.name) === String(name) && String(x.email) === String(email) && String(x.phone) === String(phone)
-    );
-    if (p) return { personalNumber: p.personalNumber || p.personal_number, name: p.name, email: p.email, phone: p.phone, password: p.password, balance: Number(p.balance || 0) };
-  }
-  return null;
+  try {
+    const q = sb.from('profiles').select('*').eq('name', String(name || '')).eq('email', String(email || '')).eq('phone', String(phone || '')).limit(1).maybeSingle();
+    const { data, error } = await q;
+    if (error) console.warn('findProfileByIdentity supabase err', error);
+    return data ? mapSbProfileToResponse(data) : null;
+  } catch (e) { console.warn('findProfileByIdentity supabase', e); return null; }
 }
 
 async function sendTelegramMessageToChat(chatId, text, tokenOverride) {
@@ -151,170 +120,115 @@ async function sendTelegramMessageToChat(chatId, text, tokenOverride) {
   }
 }
 
-// ===== addBalanceToPersonal (single clean version) =====
+// ===== addBalanceToPersonal (Supabase-only) =====
 async function addBalanceToPersonal(personal, amount) {
   try {
     if (!personal) return { ok: false, error: 'missing_personal' };
     const amt = Number(amount || 0);
     if (isNaN(amt) || amt <= 0) return { ok: false, error: 'invalid_amount' };
 
-    if (useSupabase && sb) {
-      try {
-        const { data: profRow, error: selErr } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-        if (selErr) console.warn('addBalance select err', selErr);
+    const { data: profRow, error: selErr } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+    if (selErr) console.warn('addBalance select err', selErr);
 
-        if (!profRow) {
-          const ins = {
-            personal_number: String(personal),
-            name: 'ضيف',
-            email: '',
-            password: '',
-            phone: '',
-            balance: amt,
-            can_edit: false,
-            last_login: new Date().toISOString()
-          };
-          const { data: newProf, error: insErr } = await sb.from('profiles').insert([ins]).select().maybeSingle();
-          if (insErr) console.warn('addBalance insert err', insErr);
-          await sb.from('notifications').insert([{ personal_number: String(personal), text: `تمت إضافة مبلغ ${amt} إلى رصيدك. الرصيد الجديد: ${newProf ? Number(newProf.balance||amt) : amt}`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
-          console.log(`addBalance: personal=${personal} +${amt} => ${newProf ? Number(newProf.balance||amt) : amt} (created)`);
-          return { ok: true, newBalance: Number(newProf ? newProf.balance || amt : amt) };
-        }
-
-        const oldBal = Number(profRow.balance || 0);
-        const newBal = oldBal + amt;
-        const { error: upErr } = await sb.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal));
-        if (upErr) console.warn('addBalance update err', upErr);
-
-        await sb.from('notifications').insert([{ personal_number: String(personal), text: `تمت إضافة مبلغ ${amt} إلى رصيدك. الرصيد الجديد: ${newBal}`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
-        console.log(`addBalance: personal=${personal} +${amt} => ${newBal} (supabase)`);
-        return { ok: true, newBalance: newBal };
-      } catch (e) {
-        console.error('addBalanceToPersonal supabase exception', e);
-        return { ok: false, error: 'supabase_error' };
-      }
+    if (!profRow) {
+      const ins = {
+        personal_number: String(personal),
+        name: 'ضيف',
+        email: '',
+        password: '',
+        phone: '',
+        balance: amt,
+        can_edit: false,
+        last_login: new Date().toISOString()
+      };
+      const { data: newProf, error: insErr } = await sb.from('profiles').insert([ins]).select().maybeSingle();
+      if (insErr) console.warn('addBalance insert err', insErr);
+      await sb.from('notifications').insert([{ personal_number: String(personal), text: `تمت إضافة مبلغ ${amt} إلى رصيدك. الرصيد الجديد: ${newProf ? Number(newProf.balance||amt) : amt}`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
+      return { ok: true, newBalance: Number(newProf ? newProf.balance || amt : amt) };
     }
 
-    // local fallback
-    let p = (DB.profiles || []).find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
-    if (!p) {
-      p = { personalNumber: String(personal), personal_number: String(personal), name: 'ضيف', email: '', password: '', phone: '', balance: amt, canEdit: false, lastLogin: new Date().toISOString() };
-      DB.profiles.push(p);
-    } else {
-      p.balance = Number(p.balance || 0) + amt;
-    }
+    const oldBal = Number(profRow.balance || 0);
+    const newBal = oldBal + amt;
+    const { error: upErr } = await sb.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal));
+    if (upErr) console.warn('addBalance update err', upErr);
 
-    DB.notifications = DB.notifications || [];
-    DB.notifications.unshift({
-      id: String(Date.now()),
-      personal: String(personal),
-      text: `تمت إضافة مبلغ ${amt} إلى رصيدك. الرصيد الجديد: ${p.balance}`,
-      read: false,
-      createdAt: new Date().toISOString()
-    });
-    saveData(DB);
-    console.log(`addBalance: personal=${personal} +${amt} => ${p.balance} (local)`);
-    return { ok: true, newBalance: Number(p.balance) };
+    await sb.from('notifications').insert([{ personal_number: String(personal), text: `تمت إضافة مبلغ ${amt} إلى رصيدك. الرصيد الجديد: ${newBal}`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
+    return { ok: true, newBalance: newBal };
   } catch (e) {
     console.error('addBalanceToPersonal error', e);
     return { ok: false, error: String(e) };
   }
 }
 
-// Mark latest pending charge as accepted (optional)
 async function markLatestPendingChargeAsAccepted(personal, amount) {
   try {
     if (!personal) return { ok: false, error: 'missing_personal' };
-    if (useSupabase && sb) {
-      const { data: pending } = await sb.from('charges').select('*').eq('personal_number', String(personal)).eq('replied', false).order('created_at', { ascending: false }).limit(10);
-      if (pending && pending.length > 0) {
-        let found = pending.find(p => Number(p.amount) === Number(amount));
-        if (!found) found = pending[0];
-        if (found) {
-          await sb.from('charges').update({ status: 'مقبول', replied: true }).eq('id', found.id).eq('replied', false);
-          return { ok: true, chargeId: found.id };
-        }
-      }
-      return { ok: false, error: 'no_pending_charge' };
-    }
-    const pendingLocal = (DB.charges || []).filter(c => String(c.personalNumber || c.personal) === String(personal) && !c.replied).sort((a,b)=> new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at));
-    if (pendingLocal.length > 0) {
-      let found = pendingLocal.find(p => Number(p.amount) === Number(amount));
-      if (!found) found = pendingLocal[0];
+    const { data: pending } = await sb.from('charges').select('*').eq('personal_number', String(personal)).eq('replied', false).order('created_at', { ascending: false }).limit(10);
+    if (pending && pending.length > 0) {
+      let found = pending.find(p => Number(p.amount) === Number(amount));
+      if (!found) found = pending[0];
       if (found) {
-        found.status = 'مقبول'; found.replied = true; found.updatedAt = new Date().toISOString();
-        saveData(DB);
-        return { ok: true, chargeId: found.id || found.cid || null };
+        await sb.from('charges').update({ status: 'مقبول', replied: true }).eq('id', found.id).eq('replied', false);
+        return { ok: true, chargeId: found.id };
       }
     }
     return { ok: false, error: 'no_pending_charge' };
-  } catch (e) {
-    console.error('markLatestPendingChargeAsAccepted error', e);
-    return { ok: false, error: String(e) };
-  }
+  } catch (e) { console.error('markLatestPendingChargeAsAccepted error', e); return { ok: false, error: String(e) }; }
 }
 
-// confirmChargeById: accept a charge and credit balance
 async function confirmChargeById(id) {
   try {
     if (!id) return { ok: false, error: 'missing_id' };
-    if (useSupabase && sb) {
-      const { data: chargeRow } = await sb.from('charges').select('*').eq('id', id).limit(1).maybeSingle();
-      if (!chargeRow) return { ok: false, error: 'charge_not_found' };
-      if (chargeRow.replied) return { ok: false, error: 'already_confirmed' };
-      const amount = Number(chargeRow.amount || 0);
-      const personal = String(chargeRow.personal_number || chargeRow.personal || '');
-      const { data: profRow } = await sb.from('profiles').select('*').eq('personal_number', personal).limit(1).maybeSingle();
-      if (!profRow) return { ok: false, error: 'profile_not_found' };
-      const oldBal = Number(profRow.balance || 0);
-      const newBal = oldBal + (isNaN(amount) ? 0 : amount);
-      await sb.from('profiles').update({ balance: newBal }).eq('personal_number', personal);
-      await sb.from('charges').update({ status: 'مقبول', replied: true }).eq('id', id);
-      await sb.from('notifications').insert([{ personal_number: personal, text: `تمت إضافة مبلغ ${amount} إلى رصيدك. الرصيد الآن: ${newBal}`, read: false, created_at: new Date().toISOString() }]);
-      return { ok: true, newBalance: newBal, chargeId: id };
-    }
-    const ch = (DB.charges || []).find(c => String(c.id) === String(id));
-    if (!ch) return { ok: false, error: 'charge_not_found' };
-    if (ch.replied) return { ok: false, error: 'already_confirmed' };
-    const personal = String(ch.personalNumber || ch.personal || '');
-    const amount = Number(ch.amount || 0);
-    let p = (DB.profiles || []).find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
-    if (!p) { p = { personalNumber: personal, personal_number: personal, name: 'ضيف', balance: amount }; DB.profiles.push(p); }
-    else p.balance = Number(p.balance || 0) + amount;
-    ch.status = 'مقبول'; ch.replied = true; ch.updatedAt = new Date().toISOString();
-    DB.notifications = DB.notifications || [];
-    DB.notifications.unshift({ id: String(Date.now()), personal: personal, text: `تمت إضافة مبلغ ${amount} إلى رصيدك. الرصيد الآن: ${p.balance}`, read: false, createdAt: new Date().toISOString() });
-    saveData(DB);
-    return { ok: true, newBalance: p.balance, chargeId: id };
-  } catch (e) {
-    console.error('confirmChargeById error', e);
-    return { ok: false, error: String(e) };
-  }
+    const { data: chargeRow } = await sb.from('charges').select('*').eq('id', id).limit(1).maybeSingle();
+    if (!chargeRow) return { ok: false, error: 'charge_not_found' };
+    if (chargeRow.replied) return { ok: false, error: 'already_confirmed' };
+    const amount = Number(chargeRow.amount || 0);
+    const personal = String(chargeRow.personal_number || chargeRow.personal || '');
+    const { data: profRow } = await sb.from('profiles').select('*').eq('personal_number', personal).limit(1).maybeSingle();
+    if (!profRow) return { ok: false, error: 'profile_not_found' };
+    const oldBal = Number(profRow.balance || 0);
+    const newBal = oldBal + (isNaN(amount) ? 0 : amount);
+    await sb.from('profiles').update({ balance: newBal }).eq('personal_number', personal);
+    await sb.from('charges').update({ status: 'مقبول', replied: true }).eq('id', id);
+    await sb.from('notifications').insert([{ personal_number: personal, text: `تمت إضافة مبلغ ${amount} إلى رصيدك. الرصيد الآن: ${newBal}`, read: false, created_at: new Date().toISOString() }]);
+    return { ok: true, newBalance: newBal, chargeId: id };
+  } catch (e) { console.error('confirmChargeById error', e); return { ok: false, error: String(e) }; }
 }
 
-// ---------------- End helpers ----------------
-
-// ---------------- Upload endpoint ----------------
-const publicDir = path.join(__dirname, 'public');
-if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
-const uploadsDir = path.join(publicDir, 'uploads'); if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+// ---------------- Upload endpoint (uploads to Supabase storage) ----------------
 const memoryStorage = multer.memoryStorage();
 const uploadMemory = multer({ storage: memoryStorage });
 
 app.post('/api/upload', uploadMemory.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ ok: false, error: 'no_file' });
   try {
-    const name = Date.now() + '-' + (req.file.originalname || 'f.bin');
-    fs.writeFileSync(path.join(uploadsDir, name), req.file.buffer);
-    const url = `${req.protocol}://${req.get('host')}/uploads/${encodeURIComponent(name)}`;
-    return res.json({ ok: true, url, provider: 'local' });
+    if (!req.file) return res.status(400).json({ ok: false, error: 'no_file' });
+
+    const bucket = CFG.SUPABASE_STORAGE_BUCKET;
+    const filename = `${Date.now()}-${(req.file.originalname || 'file').replace(/\s+/g, '_')}`;
+    const filePath = filename;
+
+    // upload to supabase storage
+    const { data: upData, error: upErr } = await sb.storage.from(bucket).upload(filePath, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
+    if (upErr) {
+      console.warn('supabase storage upload err', upErr);
+      return res.status(500).json({ ok: false, error: 'storage_upload_failed' });
+    }
+
+    // get public url
+    const { data: pubData, error: pubErr } = await sb.storage.from(bucket).getPublicUrl(filePath);
+    if (pubErr) {
+      console.warn('supabase storage getPublicUrl err', pubErr);
+      return res.json({ ok: true, url: '', provider: 'supabase' });
+    }
+    const url = (pubData && pubData.publicUrl) ? pubData.publicUrl : '';
+    return res.json({ ok: true, url, provider: 'supabase' });
   } catch (e) {
-    console.error('upload error', e);
+    console.error('upload endpoint error', e);
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-// --------------- Register ----------------
+// ---------------- Register ----------------
 app.post('/api/register', async (req, res) => {
   try {
     const { name, email, password, phone } = req.body || {};
@@ -332,42 +246,27 @@ app.post('/api/register', async (req, res) => {
       last_login: new Date().toISOString()
     };
 
-    if (useSupabase && sb) {
-      const { data, error } = await sb.from('profiles').insert([newProfile]).select().maybeSingle();
-      if (error) console.warn('register insert err', error);
-      return res.json({ ok: true, profile: mapSbProfileToResponse(data || { personal_number: personalNumber, ...newProfile }) });
-    } else {
-      const pLocal = { personalNumber: personalNumber, name: newProfile.name, email: newProfile.email, password: newProfile.password, phone: newProfile.phone, balance: 0, canEdit: false, lastLogin: newProfile.last_login };
-      DB.profiles.push(pLocal); saveData(DB);
-      return res.json({ ok: true, profile: { personalNumber, name: pLocal.name, email: pLocal.email, phone: pLocal.phone, balance: 0 } });
-    }
+    const { data, error } = await sb.from('profiles').insert([newProfile]).select().maybeSingle();
+    if (error) console.warn('register insert err', error);
+    return res.json({ ok: true, profile: mapSbProfileToResponse(data || { personal_number: personalNumber, ...newProfile }) });
   } catch (e) {
     console.error('register error', e);
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-// --------------- Login (only search by name+email+phone+password) ----------------
+// --------------- Login ----------------
 app.post('/api/login', async (req, res) => {
   try {
     const { name, email, phone, password } = req.body || {};
     if (!name || !email || !phone || !password) return res.status(400).json({ ok: false, error: 'missing_fields' });
 
     const profile = await findProfileByIdentity({ name, email, phone });
-    if (!profile) {
-      return res.status(404).json({ ok: false, error: 'not_found' });
-    }
-    if (profile.password && String(profile.password) !== String(password)) {
-      return res.status(401).json({ ok: false, error: 'wrong_password' });
-    }
+    if (!profile) return res.status(404).json({ ok: false, error: 'not_found' });
+    if (profile.password && String(profile.password) !== String(password)) return res.status(401).json({ ok: false, error: 'wrong_password' });
 
     try {
-      if (useSupabase && sb) {
-        await sb.from('profiles').update({ last_login: new Date().toISOString() }).eq('personal_number', String(profile.personalNumber));
-      } else {
-        const p = DB.profiles.find(x => String(x.personalNumber) === String(profile.personalNumber) || String(x.personal_number) === String(profile.personalNumber));
-        if (p) { p.lastLogin = new Date().toISOString(); saveData(DB); }
-      }
+      await sb.from('profiles').update({ last_login: new Date().toISOString() }).eq('personal_number', String(profile.personalNumber));
     } catch (e) { /* ignore */ }
 
     return res.json({ ok: true, profile });
@@ -384,61 +283,35 @@ app.get('/api/notifications/:personal', async (req, res) => {
     if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
 
     const profile = await findProfileByPersonal(personal);
-    let notifications = [], orders = [], charges = [], offers = [];
 
-    if (useSupabase && sb) {
-      try {
-        const { data: nots } = await sb.from('notifications').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
-        const { data: ords } = await sb.from('orders').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
-        const { data: chs } = await sb.from('charges').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
-        const { data: ofs } = await sb.from('offers').select('*').eq('active', true).order('created_at', { ascending: false }).limit(50);
-        notifications = nots || []; orders = ords || []; charges = chs || []; offers = ofs || [];
-      } catch (e) { console.warn('notifications supabase fetch err', e); }
-    } else {
-      notifications = (DB.notifications || []).filter(n => String(n.personal) === String(personal));
-      orders = (DB.orders || []).filter(o => String(o.personalNumber || o.personal) === String(personal));
-      charges = (DB.charges || []).filter(c => String(c.personalNumber || c.personal) === String(personal));
-      offers = (DB.offers || []).filter(o => !!o.active);
-    }
+    const { data: nots } = await sb.from('notifications').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
+    const { data: ords } = await sb.from('orders').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
+    const { data: chs } = await sb.from('charges').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
+    const { data: ofs } = await sb.from('offers').select('*').eq('active', true).order('created_at', { ascending: false }).limit(50);
 
-    return res.json({ ok: true, profile, notifications, orders, charges, offers });
+    return res.json({ ok: true, profile, notifications: nots || [], orders: ords || [], charges: chs || [], offers: ofs || [] });
   } catch (e) {
     console.error('notifications endpoint error', e);
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-// mark-read / clear (simple)
+// mark-read / clear
 app.post('/api/notifications/mark-read', async (req, res) => {
   try {
     const { personal } = req.body || {};
     if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-    if (useSupabase && sb) {
-      await sb.from('notifications').update({ read: true }).eq('personal_number', String(personal));
-    } else {
-      DB.notifications = (DB.notifications || []).map(n => (String(n.personal) === String(personal) ? { ...n, read: true } : n));
-      saveData(DB);
-    }
+    await sb.from('notifications').update({ read: true }).eq('personal_number', String(personal));
     return res.json({ ok: true });
-  } catch (e) {
-    console.error('mark-read error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
+  } catch (e) { console.error('mark-read error', e); return res.status(500).json({ ok: false, error: String(e) }); }
 });
 app.post('/api/notifications/clear', async (req, res) => {
   try {
     const { personal } = req.body || {};
     if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-    if (useSupabase && sb) {
-      await sb.from('notifications').delete().eq('personal_number', String(personal));
-    } else {
-      DB.notifications = (DB.notifications || []).filter(n => String(n.personal) !== String(personal)); saveData(DB);
-    }
+    await sb.from('notifications').delete().eq('personal_number', String(personal));
     return res.json({ ok: true });
-  } catch (e) {
-    console.error('clear notifications error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
+  } catch (e) { console.error('clear notifications error', e); return res.status(500).json({ ok: false, error: String(e) }); }
 });
 
 // --------------- Orders (deduct from balance server-side) ---------------
@@ -449,40 +322,27 @@ app.post('/api/orders', async (req, res) => {
 
     let profile = await findProfileByPersonal(personal);
     if (!profile) {
-      if (useSupabase) {
-        await sb.from('profiles').insert([{ personal_number: String(personal), name: 'ضيف', email: '', password: '', phone: phone || '', balance: 0, can_edit: false, last_login: new Date().toISOString() }]).catch(()=>{});
-        profile = await findProfileByPersonal(personal);
-      } else {
-        DB.profiles.push({ personalNumber: String(personal), name: 'ضيف', email: '', password: '', phone: phone || '', balance: 0, canEdit: false, lastLogin: new Date().toISOString() });
-        saveData(DB);
-        profile = await findProfileByPersonal(personal);
-      }
+      // create profile stub
+      await sb.from('profiles').insert([{ personal_number: String(personal), name: 'ضيف', email: '', password: '', phone: phone || '', balance: 0, can_edit: false, last_login: new Date().toISOString() }]).catch(()=>{});
+      profile = await findProfileByPersonal(personal);
     }
 
     if (paidWithBalance) {
       const price = Number(paidAmount || 0);
       if (isNaN(price) || price <= 0) return res.status(400).json({ ok: false, error: 'invalid_paid_amount' });
-      if (useSupabase && sb) {
-        const { data: profRow } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-        const bal = profRow ? Number(profRow.balance || 0) : 0;
-        if (bal < price) return res.status(402).json({ ok: false, error: 'insufficient_balance' });
-        const newBal = bal - price;
-        await sb.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal));
-        await sb.from('notifications').insert([{ personal_number: String(personal), text: `تم خصم ${price} من رصيدك لطلب: ${item}`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
-      } else {
-        const p = DB.profiles.find(x => String(x.personalNumber) === String(personal));
-        if (!p) return res.status(404).json({ ok: false, error: 'profile_not_found' });
-        if (Number(p.balance || 0) < price) return res.status(402).json({ ok: false, error: 'insufficient_balance' });
-        p.balance = Number(p.balance || 0) - price;
-        saveData(DB);
-      }
+      const { data: profRow } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+      const bal = profRow ? Number(profRow.balance || 0) : 0;
+      if (bal < price) return res.status(402).json({ ok: false, error: 'insufficient_balance' });
+      const newBal = bal - price;
+      await sb.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal));
+      await sb.from('notifications').insert([{ personal_number: String(personal), text: `تم خصم ${price} من رصيدك لطلب: ${item}`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
     }
 
-    const orderId = Date.now();
+    const orderId = String(Date.now());
     const orderRecord = {
       id: orderId,
-      personal_number: personal,
-      phone: phone || profile.phone || '',
+      personal_number: String(personal),
+      phone: phone || (profile && profile.phone) || '',
       type, item,
       id_field: idField || '',
       file_link: fileLink || '',
@@ -492,13 +352,7 @@ app.post('/api/orders', async (req, res) => {
       created_at: new Date().toISOString()
     };
 
-    if (useSupabase && sb) {
-      await sb.from('orders').insert([orderRecord]).catch(e => console.warn('orders insert err', e));
-    } else {
-      DB.orders = DB.orders || [];
-      DB.orders.unshift({ id: orderId, personalNumber: personal, phone: orderRecord.phone, type, item, idField: idField || '', fileLink: fileLink || '', cashMethod: cashMethod || '', status: 'قيد المراجعة', replied: false, createdAt: orderRecord.created_at });
-      saveData(DB);
-    }
+    await sb.from('orders').insert([orderRecord]).catch(e => console.warn('orders insert err', e));
 
     const adminText = `طلب جديد\nمعرف: ${orderId}\nالرقم الشخصي: ${personal}\nالبند: ${item}\nالطريقة: ${cashMethod || 'غير محددة'}`;
     try { if (CFG.BOT_ORDER_TOKEN && CFG.BOT_ORDER_CHAT) await sendTelegramMessageToChat(CFG.BOT_ORDER_CHAT, adminText, CFG.BOT_ORDER_TOKEN); } catch(e){}
@@ -541,37 +395,10 @@ app.post('/api/charge', async (req, res) => {
       created_at: createdAt
     };
 
-    if (useSupabase && sb) {
-      try {
-        const { error } = await sb.from('charges').insert([chargeRecord]);
-        if (error) console.warn('charges insert err', error);
-      } catch (e) {
-        console.error('charges insert exception', e);
-      }
-    } else {
-      DB.charges = DB.charges || [];
-      DB.charges.unshift({
-        id: chargeId,
-        personalNumber: String(personal),
-        phone,
-        amount: numericAmount,
-        method,
-        fileLink,
-        status: 'قيد المراجعة',
-        replied: false,
-        createdAt
-      });
-      saveData(DB);
-    }
+    await sb.from('charges').insert([chargeRecord]).catch(e => console.warn('charges insert err', e));
 
     const adminText = `طلب شحن جديد\nمعرف: ${chargeId}\nالرقم الشخصي: ${personal}\nالمبلغ: ${numericAmount}`;
-    try {
-      if (CFG.BOT_BALANCE_TOKEN && CFG.BOT_BALANCE_CHAT) {
-        await sendTelegramMessageToChat(CFG.BOT_BALANCE_CHAT, adminText, CFG.BOT_BALANCE_TOKEN);
-      }
-    } catch (e) {
-      console.warn('notify admin failed', e);
-    }
+    try { if (CFG.BOT_BALANCE_TOKEN && CFG.BOT_BALANCE_CHAT) await sendTelegramMessageToChat(CFG.BOT_BALANCE_CHAT, adminText, CFG.BOT_BALANCE_TOKEN); } catch (e) {}
 
     return res.json({ ok: true, charge: chargeRecord });
   } catch (e) {
@@ -606,13 +433,12 @@ app.post('/api/telegram/webhook', async (req, res) => {
       if (mid) {
         const id = mid[1];
         const result = await confirmChargeById(id);
-        console.log('Webhook confirmChargeById', id, result);
         try { await sendTelegramMessageToChat(msg.chat.id, result.ok ? `تم اعتماد الشحنة #${id}` : `تعذّر اعتماد الشحنة #${id}: ${result.error||'خطأ'}`); } catch (e){}
         return res.sendStatus(200);
       }
     }
 
-    // Parse amount & personal from message text or from replied-to text
+    // Parse amount & personal from message text or replied-to text
     let txt = (msg.text || '').replace(/\u00A0/g,' ');
     let mAmount = (txt.match(/(?:الرصيد|المبلغ|المبلغ المرسل)\s*[:\-]?\s*([0-9\.,]+)/i) || [null,null])[1];
     let mPersonal = (txt.match(/(?:الرقم\s*الشخصي|رقم)\s*[:\-]?\s*(\d+)/i) || [null,null])[1];
@@ -640,7 +466,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
       const markRes = await markLatestPendingChargeAsAccepted(personal, amount).catch(()=>({ ok:false }));
       const reply = `تمت إضافة ${amount.toLocaleString()} لرقم ${personal}. الرصيد الجديد: ${addRes.newBalance}. ${markRes.ok ? 'وُسِمَت الشحنة كمقبولة.' : 'لا توجد شحنة معلقة.'}`;
       try { await sendTelegramMessageToChat(msg.chat.id, reply); } catch (e) {}
-      console.log('Webhook processed addBalance', personal, amount, 'newBalance', addRes.newBalance);
       return res.sendStatus(200);
     }
 
@@ -667,25 +492,63 @@ app.post('/api/admin/confirm-order', async (req, res) => {
   try {
     const { id } = req.body || {};
     if (!id) return res.status(400).json({ ok: false, error: 'missing_id' });
-    if (useSupabase && sb) {
-      await sb.from('orders').update({ status: 'تمت المعالجة', replied: true }).eq('id', id);
-      const { data: ord } = await sb.from('orders').select('*').eq('id', id).limit(1).maybeSingle();
-      if (ord) await sb.from('notifications').insert([{ personal_number: ord.personal_number, text: `طلبك #${id} تمّت معالجته.`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
-      return res.json({ ok: true });
-    } else {
-      const o = (DB.orders || []).find(x => String(x.id) === String(id));
-      if (!o) return res.status(404).json({ ok: false, error: 'order_not_found' });
-      o.status = 'تمت المعالجة'; o.replied = true; saveData(DB);
-      DB.notifications = DB.notifications || [];
-      DB.notifications.unshift({ id: String(Date.now()), personal: o.personalNumber, text: `طلبك #${id} تمّت معالجته.`, read: false, createdAt: new Date().toISOString() });
-      return res.json({ ok: true });
-    }
+    await sb.from('orders').update({ status: 'تمت المعالجة', replied: true }).eq('id', id);
+    const { data: ord } = await sb.from('orders').select('*').eq('id', id).limit(1).maybeSingle();
+    if (ord) await sb.from('notifications').insert([{ personal_number: ord.personal_number, text: `طلبك #${id} تمّت معالجته.`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
+    return res.json({ ok: true });
   } catch (e) { console.error('confirm order err', e); return res.status(500).json({ ok:false, error: String(e) }); }
 });
 
+// --------------- Help & profile editing & offers ---------------
+app.post('/api/help', async (req, res) => {
+  try {
+    const { personal, issue, fileLink, desc, name, email, phone } = req.body || {};
+    if (!personal || !issue) return res.status(400).json({ ok: false, error: 'missing_fields' });
+    const rec = { personal_number: String(personal), issue: issue, text: desc || '', file_link: fileLink || '', name: name || '', email: email || '', phone: phone || '', created_at: new Date().toISOString() };
+    await sb.from('help_requests').insert([rec]).catch(e=>console.warn('help insert err', e));
+    // notify admin if configured
+    try { if (CFG.BOT_HELP_TOKEN && CFG.BOT_HELP_CHAT) await sendTelegramMessageToChat(CFG.BOT_HELP_CHAT, `مشكلة جديدة من ${personal}: ${issue}\n${desc || ''}`, CFG.BOT_HELP_TOKEN); } catch(e){}
+    return res.json({ ok: true });
+  } catch (e) { console.error('help err', e); return res.status(500).json({ ok:false, error: String(e) }); }
+});
+
+app.post('/api/profile/request-edit', async (req, res) => {
+  try {
+    const { personal } = req.body || {};
+    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
+    await sb.from('profile_edit_requests').insert([{ personal_number: String(personal), status: 'pending', created_at: new Date().toISOString() }]).catch(e=>console.warn('profile edit request insert err', e));
+    return res.json({ ok: true });
+  } catch (e) { console.error('profile request err', e); return res.status(500).json({ ok:false, error: String(e) }); }
+});
+
+app.post('/api/profile/submit-edit', async (req, res) => {
+  try {
+    const { personal, name, email, password, phone } = req.body || {};
+    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
+    const updates = {};
+    if (typeof name !== 'undefined') updates.name = name;
+    if (typeof email !== 'undefined') updates.email = email;
+    if (typeof password !== 'undefined') updates.password = password;
+    if (typeof phone !== 'undefined') updates.phone = phone;
+    updates.can_edit = false;
+    await sb.from('profiles').update(updates).eq('personal_number', String(personal));
+    const { data } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+    return res.json({ ok: true, profile: mapSbProfileToResponse(data) });
+  } catch (e) { console.error('profile submit-edit err', e); return res.status(500).json({ ok:false, error: String(e) }); }
+});
+
+app.post('/api/offer/ack', async (req, res) => {
+  try {
+    const { personal, offerId } = req.body || {};
+    if (!personal || !offerId) return res.status(400).json({ ok: false, error: 'missing_fields' });
+    await sb.from('offers_ack').insert([{ personal_number: String(personal), offer_id: String(offerId), created_at: new Date().toISOString() }]).catch(()=>{});
+    return res.json({ ok: true });
+  } catch (e) { console.error('offer ack err', e); return res.status(500).json({ ok:false, error: String(e) }); }
+});
+
 // --------------- Simple health ----------------
-app.get('/api/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString(), supabase: useSupabase }));
+app.get('/api/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString(), supabase: true }));
 
 // --------------- Start ----------------
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
-process.on('SIGINT', () => { try { saveData(DB); console.log('Saved DB before exit'); } catch (e) {} process.exit(); });
+process.on('SIGINT', () => { console.log('SIGINT received, exiting'); process.exit(); });
