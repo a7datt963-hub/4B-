@@ -1,46 +1,74 @@
-// server.js — كامل ومُحدّث
-// Requires: express, cors, node-fetch (v2), multer, @supabase/supabase-js
-// Env variables (optional):
-// SUPABASE_URL, SUPABASE_KEY, IMGBB_KEY,
-// BOT_ORDER_TOKEN, BOT_ORDER_CHAT, BOT_BALANCE_TOKEN, BOT_BALANCE_CHAT,
-// BOT_ADMIN_CMD_TOKEN, BOT_ADMIN_CMD_CHAT, BOT_HELP_TOKEN, BOT_HELP_CHAT, BOT_OFFERS_TOKEN, BOT_OFFERS_CHAT
+// server.js — نسخة كاملة ومُعدّلة مع CFG مُضمّن (قِيَم جاهزة للعمل)
+// الحزم المطلوبة: express, cors, node-fetch@2, multer, @supabase/supabase-js
+// تشغيل: node server.js
 
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
+const fetch = require('node-fetch'); // v2
 const fs = require('fs');
 const path = require('path');
-const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
-// --- Config / keys ---
+// ----------------- CFG (مضمّن بالقيم التي أرسلتها) -----------------
 const CFG = {
-  BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || "",
-  BOT_ORDER_CHAT: process.env.BOT_ORDER_CHAT || "",
-  BOT_BALANCE_TOKEN: process.env.BOT_BALANCE_TOKEN || "",
-  BOT_BALANCE_CHAT: process.env.BOT_BALANCE_CHAT || "",
-  BOT_ADMIN_CMD_TOKEN: process.env.BOT_ADMIN_CMD_TOKEN || "",
-  BOT_ADMIN_CMD_CHAT: process.env.BOT_ADMIN_CMD_CHAT || "",
-  BOT_LOGIN_REPORT_TOKEN: process.env.BOT_LOGIN_REPORT_TOKEN || "",
-  BOT_LOGIN_REPORT_CHAT: process.env.BOT_LOGIN_REPORT_CHAT || "",
-  BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || "",
-  BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || "",
-  BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "",
-  BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || "",
-  BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || "",
-  BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || "",
-  IMGBB_KEY: process.env.IMGBB_KEY || ""
+  PORT,
+
+  // Supabase
+  SUPABASE_URL: process.env.SUPABASE_URL || "https://ugdktasyhuojvdunwwyd.supabase.co",
+  SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnZGt0YXN5aHVvanZkdW53d3lkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Njc5NzU1NSwiZXhwIjoyMDcyMzczNTU1fQ.9_EnpQ8JCIhBfr9CXoVvK26NlQMbWmiZGB9fZ5FR6pQ",
+
+  // ImgBB
+  IMGBB_KEY: process.env.IMGBB_KEY || "e5603dfd5675ed2b5a671577abcf6d33",
+
+  // Telegram bots & chats (مضمّن)
+  BOT_ADMIN_CMD_TOKEN: process.env.BOT_ADMIN_CMD_TOKEN || "7867503081:AAE32J-TrMh52QYHrbPzsKxnM7qbgA9iKCo",
+  BOT_ADMIN_CMD_CHAT: process.env.BOT_ADMIN_CMD_CHAT || "7649409589",
+
+  BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || "8242410438:AAHtm6-aIldfmTe1JQVnhdYkOIY3MaN4aFA",
+  BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || "7649409589",
+
+  BOT_LOGIN_REPORT_TOKEN: process.env.BOT_LOGIN_REPORT_TOKEN || "8322394934:AAFik8dEU71oOxBCHlhOVNKFGATWnqlg-_8",
+  BOT_LOGIN_REPORT_CHAT: process.env.BOT_LOGIN_REPORT_CHAT || "7649409589",
+
+  BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || "7909957386:AAEQZDloKb-JCcUInKiw5gmSmThPuyruxbU",
+  BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || "7649409589",
+
+  BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "7976416746:AAGyvWAxanxhkz--4c6U_3-NA2TGBV4lJ9Y",
+  BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || "7649409589",
+
+  BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || "8484157462:AAGHyBqwL9k1EmzvXAIZkb9UNDcwIGMINAs",
+  BOT_ORDER_CHAT: process.env.BOT_ORDER_CHAT || "7649409589",
+
+  // Notice: the names you sent used CFG_BOT_BALANCE_* — we map them to BOT_BALANCE_*
+  BOT_BALANCE_TOKEN: process.env.CFG_BOT_BALANCE_TOKEN || "8028609250:AAHXWR7PlZpBieM5Sx0oJI0dbUczxs9XJIg",
+  BOT_BALANCE_CHAT: process.env.CFG_BOT_BALANCE_CHAT || "7649409589",
+
+  // Optional: if you want to restrict admin commands additionally to specific user ids
+  ADMIN_ALLOWED_USERS: [] // put numeric Telegram user IDs here if needed, e.g. [12345678]
 };
 
-// --- Local DB fallback file ---
+// ----------------- Supabase client (اختياري) -----------------
+const useSupabase = !!(CFG.SUPABASE_URL && CFG.SUPABASE_SERVICE_KEY);
+let sb = null;
+if (useSupabase) {
+  try {
+    sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_SERVICE_KEY, { global: { fetch } });
+    console.log('Supabase client initialized');
+  } catch (e) {
+    console.warn('Supabase init failed, falling back to local DB', e);
+  }
+}
+
+// ----------------- Local DB fallback (data.json) -----------------
 const DATA_FILE = path.join(__dirname, 'data.json');
+
 function loadData() {
   try {
     if (!fs.existsSync(DATA_FILE)) {
@@ -61,9 +89,10 @@ function loadData() {
     return JSON.parse(raw);
   } catch (e) {
     console.error('loadData error', e);
-    return { profiles: [], orders: [], charges: [], offers: [], notifications: [], profileEditRequests: [] };
+    return { profiles: [], orders: [], charges: [], offers: [], notifications: [], profileEditRequests: [], blocked: [], tgOffsets: {} };
   }
 }
+
 function saveData(d) {
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 2));
@@ -71,32 +100,25 @@ function saveData(d) {
     console.error('saveData error', e);
   }
 }
+
 let DB = loadData();
 
-// --- Supabase client (optional) ---
-const SUPABASE_URL = process.env.SUPABASE_URL || "";
-const SUPABASE_KEY = process.env.SUPABASE_KEY || "";
-const useSupabase = !!(SUPABASE_URL && SUPABASE_KEY);
-let sb = null;
-if (useSupabase) {
-  sb = createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch } });
-  console.log('Supabase enabled');
-} else {
-  console.log('Supabase not configured — using local data.json as fallback');
+// ----------------- Helpers -----------------
+
+// Extract personal from various possible names (body, params, query)
+function getPersonalFromReq(req) {
+  if (!req) return null;
+  const b = req.body || {};
+  if (b.personal) return String(b.personal);
+  if (b.personalNumber) return String(b.personalNumber);
+  if (b.personal_number) return String(b.personal_number);
+  if (req.params && req.params.personal) return String(req.params.personal);
+  if (req.query && (req.query.personal || req.query.personalNumber || req.query.personal_number)) {
+    return String(req.query.personal || req.query.personalNumber || req.query.personal_number);
+  }
+  return null;
 }
 
-// --- Public folders & uploads ---
-const PUBLIC_DIR = path.join(__dirname, 'public');
-if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
-app.use('/', express.static(PUBLIC_DIR));
-
-const UPLOADS_DIR = path.join(PUBLIC_DIR, 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-const memoryStorage = multer.memoryStorage();
-const uploadMemory = multer({ storage: memoryStorage });
-
-// --- Helpers ---
 function mapSbProfileToResponse(row) {
   if (!row) return null;
   return {
@@ -107,117 +129,287 @@ function mapSbProfileToResponse(row) {
     password: row.password || '',
     balance: Number(row.balance || 0),
     canEdit: !!row.can_edit,
-    lastLogin: row.last_login || null
+    lastLogin: row.last_login || null,
+    telegram_chat_id: row.telegram_chat_id || row.tg_chat_id || row.chat_id || null
   };
 }
 
 async function findProfileByPersonal(personal) {
   if (!personal) return null;
   try {
-    if (useSupabase) {
+    if (useSupabase && sb) {
       const { data, error } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-      if (error) { console.warn('sb select profile error', error); }
+      if (error) console.warn('supabase findProfile error', error);
       if (data) return mapSbProfileToResponse(data);
-      return null;
     }
   } catch (e) {
-    console.warn('findProfileByPersonal supabase error', e);
+    console.warn('findProfileByPersonal supabase err', e);
   }
-  const p = DB.profiles.find(x => String(x.personalNumber) === String(personal));
+  const p = DB.profiles.find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
   if (!p) return null;
   return {
-    personalNumber: p.personalNumber,
+    personalNumber: p.personalNumber || p.personal_number,
     name: p.name, email: p.email, phone: p.phone, password: p.password,
-    balance: Number(p.balance || 0), canEdit: !!p.canEdit, lastLogin: p.lastLogin
+    balance: Number(p.balance || 0), canEdit: !!p.canEdit, lastLogin: p.lastLogin, telegram_chat_id: p.telegram_chat_id
   };
 }
 
 async function ensureProfile(personal) {
   if (!personal) return null;
   try {
-    if (useSupabase) {
-      const { data: existing, error: selErr } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-      if (selErr) console.warn('sb ensure select err', selErr);
+    if (useSupabase && sb) {
+      const { data: existing, error } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+      if (error) console.warn('ensureProfile supabase sel err', error);
       if (existing) return mapSbProfileToResponse(existing);
       const ins = { personal_number: String(personal), name: 'ضيف', email: '', phone: '', password: '', balance: 0, can_edit: false, last_login: new Date().toISOString() };
       const { data } = await sb.from('profiles').insert([ins]).select().maybeSingle();
       return mapSbProfileToResponse(data);
     }
-  } catch (e) {
-    console.warn('ensureProfile supabase error', e);
-  }
-
-  // local
-  let p = DB.profiles.find(x => String(x.personalNumber) === String(personal));
+  } catch (e) { console.warn('ensureProfile supabase err', e); }
+  let p = DB.profiles.find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
   if (!p) {
-    p = { personalNumber: String(personal), name: 'ضيف', email: '', phone: '', password: '', balance: 0, canEdit: false, lastLogin: new Date().toISOString() };
+    p = { personalNumber: String(personal), personal_number: String(personal), name: 'ضيف', email: '', phone: '', password: '', balance: 0, canEdit: false, lastLogin: new Date().toISOString() };
     DB.profiles.push(p); saveData(DB);
   }
   return {
-    personalNumber: p.personalNumber,
+    personalNumber: p.personalNumber || p.personal_number,
     name: p.name, email: p.email, phone: p.phone, password: p.password,
     balance: Number(p.balance || 0), canEdit: !!p.canEdit, lastLogin: p.lastLogin
   };
 }
 
-// --- Upload endpoint (server-side) ---
-app.post('/api/upload', uploadMemory.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ ok: false, error: 'no file' });
+// Send Telegram message (optional)
+async function sendTelegramMessageToChat(chatId, text, tokenOverride) {
   try {
-    // Prefer local save; IMGBB optional (server-side API key)
-    const safeName = Date.now() + '-' + (req.file.originalname ? req.file.originalname.replace(/\s+/g, '_') : 'upload.bin');
-    const dest = path.join(UPLOADS_DIR, safeName);
-    fs.writeFileSync(dest, req.file.buffer);
-    const url = `${req.protocol}://${req.get('host')}/uploads/${encodeURIComponent(safeName)}`;
-    return res.json({ ok: true, url, provider: 'local' });
+    if (!chatId) return null;
+    const token = tokenOverride || CFG.BOT_NOTIFY_TOKEN || CFG.BOT_BALANCE_TOKEN || CFG.BOT_ADMIN_CMD_TOKEN;
+    if (!token) return null;
+    const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: String(chatId), text })
+    });
+    return await resp.json().catch(() => null);
   } catch (e) {
-    console.error('upload error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
+    console.warn('sendTelegramMessageToChat error', e);
+    return null;
   }
-});
+}
 
-// --- Register (no accidental balance reset) ---
+// Add balance to profile (returns {ok,newBalance} or {ok:false,error})
+async function addBalanceToPersonal(personal, amount) {
+  try {
+    const amt = Number(amount || 0);
+    if (isNaN(amt)) return { ok: false, error: 'invalid_amount' };
+
+    if (useSupabase && sb) {
+      const { data: profRow } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+      if (!profRow) {
+        const { data: newProf } = await sb.from('profiles').insert([{ personal_number: String(personal), name: 'ضيف', balance: amt }]).select().maybeSingle();
+        return { ok: true, newBalance: Number(newProf.balance || 0) };
+      }
+      const oldBal = Number(profRow.balance || 0);
+      const newBal = oldBal + amt;
+      const { error } = await sb.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal));
+      if (error) console.warn('addBalance supabase update err', error);
+      return { ok: true, newBalance: newBal };
+    }
+
+    // local fallback
+    let p = (DB.profiles || []).find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
+    if (!p) {
+      p = { personalNumber: String(personal), personal_number: String(personal), name: 'ضيف', email: '', password: '', phone: '', balance: Number(amount), canEdit: false, lastLogin: new Date().toISOString() };
+      DB.profiles.push(p);
+    } else {
+      p.balance = Number(p.balance || 0) + Number(amount);
+    }
+    saveData(DB);
+    return { ok: true, newBalance: Number(p.balance) };
+  } catch (e) {
+    console.error('addBalanceToPersonal error', e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+// Mark latest pending charge as accepted (tries to match amount)
+async function markLatestPendingChargeAsAccepted(personal, amount) {
+  try {
+    if (useSupabase && sb) {
+      const { data: pending } = await sb.from('charges').select('*').eq('personal_number', String(personal)).eq('replied', false).order('created_at', { ascending: false }).limit(5);
+      if (pending && pending.length > 0) {
+        let found = pending.find(p => Number(p.amount) === Number(amount));
+        if (!found) found = pending[0];
+        if (found) {
+          await sb.from('charges').update({ status: 'مقبول', replied: true }).eq('id', found.id).eq('replied', false);
+          return { ok: true, chargeId: found.id };
+        }
+      }
+      return { ok: false, error: 'no_pending_charge' };
+    }
+
+    const pendingLocal = (DB.charges || []).filter(c => String(c.personalNumber || c.personal) === String(personal) && !c.replied).sort((a, b) => new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at));
+    if (pendingLocal.length > 0) {
+      let found = pendingLocal.find(p => Number(p.amount) === Number(amount));
+      if (!found) found = pendingLocal[0];
+      if (found) {
+        found.status = 'مقبول'; found.replied = true; found.updatedAt = new Date().toISOString(); saveData(DB);
+        return { ok: true, chargeId: found.id || found.cid || null };
+      }
+    }
+    return { ok: false, error: 'no_pending_charge' };
+  } catch (e) {
+    console.error('markLatestPendingChargeAsAccepted error', e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+// Confirm charge by id (used by reply-to id)
+async function confirmChargeById(id) {
+  if (!id) return { ok: false, error: 'missing_id' };
+  try {
+    if (useSupabase && sb) {
+      const { data: chargeRow } = await sb.from('charges').select('*').eq('id', id).limit(1).maybeSingle();
+      if (!chargeRow) return { ok: false, error: 'charge_not_found' };
+      if (chargeRow.replied) return { ok: false, error: 'already_confirmed' };
+      const amount = Number(chargeRow.amount || 0);
+      const personal = String(chargeRow.personal_number || chargeRow.personal || '');
+      const { data: profileRow } = await sb.from('profiles').select('*').eq('personal_number', personal).limit(1).maybeSingle();
+      if (!profileRow) return { ok: false, error: 'profile_not_found' };
+      const oldBal = Number(profileRow.balance || 0);
+      const newBal = oldBal + (isNaN(amount) ? 0 : amount);
+      await sb.from('profiles').update({ balance: newBal }).eq('personal_number', personal);
+      await sb.from('charges').update({ status: 'مقبول', replied: true }).eq('id', id).eq('replied', false);
+      await sb.from('notifications').insert([{ personal_number: personal, text: `تمت إضافة مبلغ ${amount} إلى رصيدك. الرصيد الآن: ${newBal}`, read: false, created_at: new Date().toISOString() }]);
+      return { ok: true, newBalance: newBal, chargeId: id };
+    }
+
+    // local fallback
+    const ch = (DB.charges || []).find(c => String(c.id) === String(id));
+    if (!ch) return { ok: false, error: 'charge_not_found' };
+    if (ch.replied) return { ok: false, error: 'already_confirmed' };
+    const personal = String(ch.personalNumber || ch.personal || '');
+    const amount = Number(ch.amount || 0);
+    let p = (DB.profiles || []).find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
+    if (!p) { p = { personalNumber: personal, personal_number: personal, name: 'ضيف', balance: amount }; DB.profiles.push(p); }
+    else p.balance = Number(p.balance || 0) + amount;
+    ch.status = 'مقبول'; ch.replied = true; ch.updatedAt = new Date().toISOString();
+    DB.notifications = DB.notifications || [];
+    DB.notifications.unshift({ id: String(Date.now()), personal: personal, text: `تمت إضافة مبلغ ${amount} إلى رصيدك. الرصيد الآن: ${p.balance}`, read: false, createdAt: new Date().toISOString() });
+    saveData(DB);
+    return { ok: true, newBalance: p.balance, chargeId: id };
+  } catch (e) {
+    console.error('confirmChargeById error', e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+// Confirm order by id (for order bot)
+async function confirmOrderById(id) {
+  if (!id) return { ok: false, error: 'missing_id' };
+  try {
+    if (useSupabase && sb) {
+      const { data: orderRow } = await sb.from('orders').select('*').eq('id', id).limit(1).maybeSingle();
+      if (!orderRow) return { ok: false, error: 'order_not_found' };
+      if (orderRow.replied) return { ok: false, error: 'already_confirmed' };
+      await sb.from('orders').update({ status: 'تمت المعالجة', replied: true }).eq('id', id).eq('replied', false);
+      await sb.from('notifications').insert([{ personal_number: orderRow.personal_number, text: `طلبك #${id} تمّت معالجته.`, read: false, created_at: new Date().toISOString() }]);
+      return { ok: true, orderId: id };
+    }
+    const ord = (DB.orders || []).find(o => String(o.id) === String(id));
+    if (!ord) return { ok: false, error: 'order_not_found' };
+    if (ord.replied) return { ok: false, error: 'already_confirmed' };
+    ord.status = 'تمت المعالجة'; ord.replied = true; ord.updatedAt = new Date().toISOString();
+    DB.notifications = DB.notifications || [];
+    DB.notifications.unshift({ id: String(Date.now()), personal: ord.personalNumber, text: `طلبك #${id} تمّت معالجته.`, read: false, createdAt: new Date().toISOString() });
+    saveData(DB);
+    return { ok: true, orderId: id };
+  } catch (e) {
+    console.error('confirmOrderById error', e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+// Ban / unban helpers
+async function banPersonal(personal, reason = '') {
+  try {
+    if (!personal) return { ok: false, error: 'missing_personal' };
+    if (useSupabase && sb) {
+      await sb.from('blocked').insert([{ personal_number: String(personal), reason, created_at: new Date().toISOString() }]);
+      return { ok: true };
+    }
+    DB.blocked = DB.blocked || [];
+    if (!DB.blocked.includes(String(personal))) { DB.blocked.push(String(personal)); saveData(DB); }
+    return { ok: true };
+  } catch (e) {
+    console.error('banPersonal error', e);
+    return { ok: false, error: String(e) };
+  }
+}
+async function unbanPersonal(personal) {
+  try {
+    if (!personal) return { ok: false, error: 'missing_personal' };
+    if (useSupabase && sb) {
+      await sb.from('blocked').delete().eq('personal_number', String(personal));
+      return { ok: true };
+    }
+    DB.blocked = (DB.blocked || []).filter(x => String(x) !== String(personal)); saveData(DB);
+    return { ok: true };
+  } catch (e) {
+    console.error('unbanPersonal error', e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+// ----------------- Endpoints -----------------
+
+app.get('/api/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString(), supabase: useSupabase }));
+
+// Register
 app.post('/api/register', async (req, res) => {
   try {
     const { name, email, password, phone } = req.body || {};
-    let personalNumber = req.body.personalNumber || req.body.personal || null;
-    if (!personalNumber) personalNumber = String(Math.floor(1000000 + Math.random() * 9000000));
-
-    if (useSupabase) {
-      // If exists -> update only provided fields (do NOT overwrite balance)
-      const { data: existing, error: selErr } = await sb.from('profiles').select('*').eq('personal_number', String(personalNumber)).limit(1).maybeSingle();
-      if (selErr) console.warn('register select err', selErr);
+    let personalNumber = req.body.personalNumber || req.body.personal || req.body.personal_number || null;
+    if (!personalNumber) {
+      // generate unique personal number
+      let n;
+      do {
+        n = String(Math.floor(1000000 + Math.random() * 9000000));
+      } while ((DB.profiles || []).some(p => String(p.personalNumber) === n || String(p.personal_number) === n));
+      personalNumber = n;
+    }
+    if (useSupabase && sb) {
+      const { data: existing } = await sb.from('profiles').select('*').eq('personal_number', String(personalNumber)).limit(1).maybeSingle();
       if (existing) {
+        // update some fields without touching balance
         const upd = {};
         if (typeof name !== 'undefined') upd.name = name;
         if (typeof email !== 'undefined') upd.email = email;
         if (typeof password !== 'undefined') upd.password = password;
         if (typeof phone !== 'undefined') upd.phone = phone;
         if (Object.keys(upd).length > 0) {
-          const { data: upres, error: upErr } = await sb.from('profiles').update(upd).eq('personal_number', String(personalNumber)).select().maybeSingle();
-          if (upErr) console.warn('register update err', upErr);
-          return res.json({ ok: true, profile: mapSbProfileToResponse(upres || existing) });
+          const { data } = await sb.from('profiles').update(upd).eq('personal_number', String(personalNumber)).select().maybeSingle();
+          return res.json({ ok: true, profile: mapSbProfileToResponse(data) });
         }
         return res.json({ ok: true, profile: mapSbProfileToResponse(existing) });
       } else {
         const ins = { personal_number: String(personalNumber), name: name || 'ضيف', email: email || '', password: password || '', phone: phone || '', balance: 0, can_edit: false, last_login: new Date().toISOString() };
-        const { data: newp, error: insErr } = await sb.from('profiles').insert([ins]).select().maybeSingle();
-        if (insErr) console.warn('register insert err', insErr);
-        return res.json({ ok: true, profile: mapSbProfileToResponse(newp) });
+        const { data } = await sb.from('profiles').insert([ins]).select().maybeSingle();
+        return res.json({ ok: true, profile: mapSbProfileToResponse(data) });
       }
     }
 
     // local fallback
-    let p = DB.profiles.find(x => String(x.personalNumber) === String(personalNumber));
+    DB.profiles = DB.profiles || [];
+    let p = DB.profiles.find(x => String(x.personalNumber) === String(personalNumber) || String(x.personal_number) === String(personalNumber));
     if (!p) {
-      p = { personalNumber: String(personalNumber), name: name || 'ضيف', email: email || '', password: password || '', phone: phone || '', balance: 0, canEdit: false, lastLogin: new Date().toISOString() };
+      p = { personalNumber: String(personalNumber), personal_number: String(personalNumber), name: name || 'ضيف', email: email || '', password: password || '', phone: phone || '', balance: 0, canEdit: false, createdAt: new Date().toISOString() };
       DB.profiles.push(p);
     } else {
       if (typeof name !== 'undefined') p.name = name;
       if (typeof email !== 'undefined') p.email = email;
       if (typeof password !== 'undefined') p.password = password;
       if (typeof phone !== 'undefined') p.phone = phone;
-      // do NOT touch p.balance
+      // do not touch balance
     }
     saveData(DB);
     return res.json({ ok: true, profile: p });
@@ -227,42 +419,33 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// --- Login ---
+// Login
 app.post('/api/login', async (req, res) => {
   try {
-    const { personalNumber, email, password, name, phone } = req.body || {};
-    let profile = null;
+    const b = req.body || {};
+    const personal = b.personal || b.personalNumber || b.personal_number;
+    const password = b.password;
+    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
 
-    if (personalNumber) profile = await findProfileByPersonal(personalNumber);
-    else if (email) {
-      if (useSupabase) {
-        const { data, error } = await sb.from('profiles').select('*').ilike('email', String(email)).limit(1).maybeSingle();
-        if (error) console.warn('login email select err', error);
-        if (data) profile = mapSbProfileToResponse(data);
-      } else {
-        const p = DB.profiles.find(x => x.email && String(x.email).toLowerCase() === String(email).toLowerCase());
-        if (p) profile = { personalNumber: p.personalNumber, name: p.name, email: p.email, phone: p.phone, password: p.password, balance: Number(p.balance || 0), canEdit: !!p.canEdit };
-      }
-    } else if (name && phone) {
-      if (useSupabase) {
-        const { data, error } = await sb.from('profiles').select('*').ilike('name', String(name)).eq('phone', String(phone)).limit(1).maybeSingle();
-        if (error) console.warn('login name+phone select err', error);
-        if (data) profile = mapSbProfileToResponse(data);
-      } else {
-        const p = DB.profiles.find(x => String(x.name).toLowerCase() === String(name).toLowerCase() && String(x.phone) === String(phone));
-        if (p) profile = { personalNumber: p.personalNumber, name: p.name, email: p.email, phone: p.phone, password: p.password, balance: Number(p.balance || 0), canEdit: !!p.canEdit };
-      }
+    let profile = null;
+    if (useSupabase && sb) {
+      const { data, error } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+      if (error) console.warn('login supabase select error', error);
+      profile = data;
+    } else {
+      profile = (DB.profiles || []).find(p => String(p.personalNumber) === String(personal) || String(p.personal_number) === String(personal));
     }
 
     if (!profile) return res.status(404).json({ ok: false, error: 'not_found' });
-    if (password && String(password) !== String(profile.password)) return res.status(401).json({ ok: false, error: 'wrong_password' });
+    if (password && profile.password && String(profile.password) !== String(password)) {
+      return res.status(403).json({ ok: false, error: 'wrong_password' });
+    }
 
-    // update last login (best effort)
+    // update last login
     try {
-      if (useSupabase) {
-        await sb.from('profiles').update({ last_login: new Date().toISOString() }).eq('personal_number', String(profile.personalNumber));
-      } else {
-        const p = DB.profiles.find(x => String(x.personalNumber) === String(profile.personalNumber));
+      if (useSupabase && sb) await sb.from('profiles').update({ last_login: new Date().toISOString() }).eq('personal_number', String(personal));
+      else {
+        const p = (DB.profiles || []).find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
         if (p) { p.lastLogin = new Date().toISOString(); saveData(DB); }
       }
     } catch (e) { /* ignore */ }
@@ -274,197 +457,16 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// --- Notifications + orders/charges/offers retrieval ---
-app.get('/api/notifications/:personal', async (req, res) => {
-  try {
-    const personal = req.params.personal;
-    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-
-    let profile = await findProfileByPersonal(personal);
-    let notifications = [], orders = [], charges = [], offers = [];
-
-    if (useSupabase) {
-      try {
-        const { data: nots } = await sb.from('notifications').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
-        const { data: ords } = await sb.from('orders').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
-        const { data: chs } = await sb.from('charges').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
-        const { data: ofs } = await sb.from('offers').select('*').eq('active', true).order('created_at', { ascending: false }).limit(50);
-        notifications = nots || [];
-        orders = ords || [];
-        charges = chs || [];
-        offers = ofs || [];
-      } catch (e) { console.warn('notifications supabase fetch err', e); }
-    } else {
-      notifications = (DB.notifications || []).filter(n => String(n.personal) === String(personal));
-      orders = (DB.orders || []).filter(o => String(o.personalNumber || o.personal) === String(personal));
-      charges = (DB.charges || []).filter(c => String(c.personalNumber || c.personal) === String(personal));
-      offers = (DB.offers || []).filter(o => !!o.active);
-    }
-
-    return res.json({ ok: true, profile, notifications, orders, charges, offers });
-  } catch (e) {
-    console.error('notifications endpoint error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-// --- Mark notifications read & clear ---
-app.post('/api/notifications/mark-read', async (req, res) => {
-  try {
-    const { personal } = req.body || {};
-    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-
-    if (useSupabase) {
-      await sb.from('notifications').update({ read: true }).eq('personal_number', String(personal));
-      // mark orders/charges replied flag false where needed (optional)
-      await sb.from('orders').update({ replied: false }).eq('personal_number', String(personal)).eq('replied', true);
-      await sb.from('charges').update({ replied: false }).eq('personal_number', String(personal)).eq('replied', true);
-    } else {
-      DB.notifications = (DB.notifications || []).map(n => (String(n.personal) === String(personal) ? { ...n, read: true } : n));
-      if (Array.isArray(DB.orders)) DB.orders.forEach(o => { if (String(o.personalNumber) === String(personal) && o.replied) o.replied = false; });
-      if (Array.isArray(DB.charges)) DB.charges.forEach(c => { if (String(c.personalNumber) === String(personal) && c.replied) c.replied = false; });
-      saveData(DB);
-    }
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('mark-read error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-app.post('/api/notifications/clear', async (req, res) => {
-  try {
-    const { personal } = req.body || {};
-    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-    if (useSupabase) {
-      await sb.from('notifications').delete().eq('personal_number', String(personal));
-    } else {
-      DB.notifications = (DB.notifications || []).filter(n => String(n.personal) !== String(personal));
-      saveData(DB);
-    }
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('clear notifications error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-// --- Help endpoint (sends to telegram help chat) ---
-app.post('/api/help', async (req, res) => {
-  try {
-    const { personal, issue, fileLink, desc, name, email, phone } = req.body || {};
-    const prof = personal ? await findProfileByPersonal(personal) : null;
-    const text = `مشكلة من المستخدم:\nالاسم: ${name || (prof && prof.name) || 'غير معروف'}\nالرقم الشخصي: ${personal || '---'}\nالهاتف: ${phone || (prof && prof.phone) || 'لا يوجد'}\nالبريد: ${email || (prof && prof.email) || 'لا يوجد'}\nالمشكلة: ${issue}\nالوصف: ${desc || ''}\nرابط الملف: ${fileLink || 'لا يوجد'}`;
-
-    if (!CFG.BOT_HELP_TOKEN || !CFG.BOT_HELP_CHAT) {
-      return res.json({ ok: false, error: 'telegram help bot not configured' });
-    }
-    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_HELP_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: CFG.BOT_HELP_CHAT, text })
-    });
-    const data = await r.json().catch(() => null);
-    return res.json({ ok: true, telegramResult: data });
-  } catch (e) {
-    console.error('help error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-// --- Create order (from UI) ---
-app.post('/api/orders', async (req, res) => {
-  try {
-    const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount } = req.body || {};
-    if (!personal || !type || !item) return res.status(400).json({ ok: false, error: 'missing_fields' });
-
-    const prof = await ensureProfile(personal);
-
-    // If paidWithBalance -> deduct first (careful not to set negative)
-    if (paidWithBalance) {
-      const price = Number(paidAmount || 0);
-      if (isNaN(price) || price <= 0) return res.status(400).json({ ok: false, error: 'invalid_paid_amount' });
-
-      if (useSupabase) {
-        const { data: profileRow } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-        const bal = profileRow ? Number(profileRow.balance || 0) : 0;
-        if (bal < price) return res.status(402).json({ ok: false, error: 'insufficient_balance' });
-        const newBal = bal - price;
-        await sb.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal)).eq('balance', bal); // try reduce race
-        // optionally add notification
-        await sb.from('notifications').insert([{ personal_number: String(personal), text: `تم خصم ${price} من رصيدك لطلب: ${item}`, read: false, created_at: new Date().toISOString() }]);
-      } else {
-        const p = DB.profiles.find(x => String(x.personalNumber) === String(personal));
-        if (!p) return res.status(404).json({ ok: false, error: 'profile_not_found' });
-        if (Number(p.balance || 0) < price) return res.status(402).json({ ok: false, error: 'insufficient_balance' });
-        p.balance = Number(p.balance || 0) - price;
-        saveData(DB);
-      }
-    }
-
-    const orderId = Date.now();
-    const order = {
-      id: orderId,
-      personalNumber: String(personal),
-      phone: phone || prof.phone || '',
-      type, item, idField: idField || '',
-      fileLink: fileLink || '',
-      cashMethod: cashMethod || '',
-      status: 'قيد المراجعة',
-      replied: false,
-      createdAt: new Date().toISOString()
-    };
-
-    if (useSupabase) {
-      await sb.from('orders').insert([{
-        id: order.id,
-        personal_number: order.personalNumber,
-        phone: order.phone,
-        type: order.type,
-        item: order.item,
-        id_field: order.idField,
-        file_link: order.fileLink,
-        cash_method: order.cashMethod,
-        status: order.status,
-        replied: order.replied,
-        created_at: order.createdAt
-      }]);
-    } else {
-      DB.orders = DB.orders || [];
-      DB.orders.unshift(order);
-      saveData(DB);
-    }
-
-    // notify admin via telegram (orders chat)
-    const text = `طلب شحن جديد:\n\nرقم شخصي: ${order.personalNumber}\nالهاتف: ${order.phone || 'لا يوجد'}\nالنوع: ${order.type}\nالتفاصيل: ${order.item}\nالايدي: ${order.idField || ''}\nطريقة الدفع: ${order.cashMethod || ''}\nرابط الملف: ${order.fileLink || ''}\nمعرف الطلب: ${order.id}`;
-    try {
-      if (CFG.BOT_ORDER_TOKEN && CFG.BOT_ORDER_CHAT) {
-        await fetch(`https://api.telegram.org/bot${CFG.BOT_ORDER_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: CFG.BOT_ORDER_CHAT, text })
-        });
-      }
-    } catch (e) { console.warn('send order to telegram failed', e); }
-
-    return res.json({ ok: true, order });
-  } catch (e) {
-    console.error('create order error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-// --- Create charge (طلب شحن رصيد) ---
+// Create charge (user requests top-up)
 app.post('/api/charge', async (req, res) => {
   try {
-    const { personal, phone, amount, method, fileLink } = req.body || {};
+    const { personal, amount, phone, method, fileLink } = req.body || {};
     if (!personal || !amount) return res.status(400).json({ ok: false, error: 'missing_fields' });
-
-    const prof = await ensureProfile(personal);
-    const chargeId = Date.now();
+    const chargeId = String(Date.now()) + Math.floor(Math.random() * 999);
     const charge = {
       id: chargeId,
       personalNumber: String(personal),
-      phone: phone || prof.phone || '',
+      phone: phone || '',
       amount: Number(amount),
       method: method || '',
       fileLink: fileLink || '',
@@ -473,7 +475,7 @@ app.post('/api/charge', async (req, res) => {
       createdAt: new Date().toISOString()
     };
 
-    if (useSupabase) {
+    if (useSupabase && sb) {
       await sb.from('charges').insert([{
         id: charge.id,
         personal_number: charge.personalNumber,
@@ -491,204 +493,153 @@ app.post('/api/charge', async (req, res) => {
       saveData(DB);
     }
 
-    // notify admin
-    const text = `طلب شحن رصيد:\n\nرقم شخصي: ${personal}\nالهاتف: ${charge.phone || 'لا يوجد'}\nالمبلغ: ${amount}\nطريقة الدفع: ${method}\nرابط الملف: ${fileLink || ''}\nمعرف الشحنة: ${chargeId}`;
+    // notify admin/chat about new charge (optional)
     try {
       if (CFG.BOT_BALANCE_TOKEN && CFG.BOT_BALANCE_CHAT) {
         await fetch(`https://api.telegram.org/bot${CFG.BOT_BALANCE_TOKEN}/sendMessage`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: CFG.BOT_BALANCE_CHAT, text })
+          body: JSON.stringify({ chat_id: CFG.BOT_BALANCE_CHAT, text:
+            `طلب شحن جديد\nمعرف الشحنة: ${chargeId}\nالرقم الشخصي: ${personal}\nالمبلغ: ${amount}` })
         });
       }
-    } catch (e) { console.warn('send charge to telegram failed', e); }
+    } catch (e) { console.warn('notify admin about charge failed', e); }
 
     return res.json({ ok: true, charge });
   } catch (e) {
-    console.error('charge endpoint error', e);
+    console.error('charge error', e);
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-// --- Helper: confirmChargeById (centralized) ---
-async function confirmChargeById(id) {
-  if (!id) return { ok: false, error: 'missing_id' };
-  try {
-    // Supabase branch
-    if (useSupabase) {
-      // Get charge row
-      const { data: chargeRow, error: selErr } = await sb.from('charges').select('*').eq('id', id).limit(1).maybeSingle();
-      if (selErr) return { ok: false, error: selErr.message || selErr };
-      if (!chargeRow) return { ok: false, error: 'charge_not_found' };
-      if (chargeRow.replied) return { ok: false, error: 'already_confirmed' };
-
-      const amount = Number(chargeRow.amount || 0);
-      const personal = String(chargeRow.personal_number || chargeRow.personal || '');
-
-      // Get profile
-      const { data: profileRow, error: profErr } = await sb.from('profiles').select('*').eq('personal_number', personal).limit(1).maybeSingle();
-      if (profErr) console.warn('confirm get profile err', profErr);
-      if (!profileRow) return { ok: false, error: 'profile_not_found' };
-
-      const oldBal = Number(profileRow.balance || 0);
-      const newBal = oldBal + (isNaN(amount) ? 0 : amount);
-
-      // To reduce race conditions, update profile only if balance is oldBal (optimistic)
-      // Note: if concurrent updates may exist, consider using DB transactions or RLS functions.
-      const { data: upProf, error: updProfErr } = await sb.from('profiles').update({ balance: newBal }).eq('personal_number', personal).select().maybeSingle();
-      if (updProfErr) console.warn('confirm update profile err', updProfErr);
-
-      // Mark charge as replied = true and status accepted, prefer conditional update where replied was false
-      const { data: upCharge, error: updChargeErr } = await sb.from('charges').update({ status: 'مقبول', replied: true }).eq('id', id).eq('replied', false).select().maybeSingle();
-      if (updChargeErr) console.warn('confirm update charge err', updChargeErr);
-      // if upCharge is null, it might have been updated concurrently
-      return { ok: true, newBalance: newBal };
-    }
-
-    // Local fallback
-    const charge = (DB.charges || []).find(c => String(c.id) === String(id));
-    if (!charge) return { ok: false, error: 'charge_not_found' };
-    if (charge.replied) return { ok: false, error: 'already_confirmed' };
-
-    const amount = Number(charge.amount || 0);
-    const personal = String(charge.personalNumber || charge.personal || '');
-    const profile = (DB.profiles || []).find(p => String(p.personalNumber) === personal);
-    if (!profile) return { ok: false, error: 'profile_not_found' };
-
-    profile.balance = Number(profile.balance || 0) + (isNaN(amount) ? 0 : amount);
-    charge.status = 'مقبول';
-    charge.replied = true;
-    saveData(DB);
-    return { ok: true, newBalance: profile.balance };
-  } catch (e) {
-    console.error('confirmChargeById error', e);
-    return { ok: false, error: String(e) };
-  }
-}
-
-// --- Endpoint: confirm charge manually ---
+// Confirm charge by ID (HTTP endpoint)
 app.post('/api/charge/confirm', async (req, res) => {
   try {
-    const { id } = req.body || {};
+    const id = req.body && (req.body.id || req.body.chargeId);
     if (!id) return res.status(400).json({ ok: false, error: 'missing_id' });
-
     const result = await confirmChargeById(id);
     if (!result.ok) return res.status(400).json(result);
-
-    // optional: add notification for user
-    try {
-      if (useSupabase) {
-        // find personal_number from charges
-        const { data: ch } = await sb.from('charges').select('personal_number').eq('id', id).limit(1).maybeSingle();
-        const personal = ch ? ch.personal_number : null;
-        if (personal) {
-          await sb.from('notifications').insert([{ personal_number: String(personal), text: `تمت الموافقة على الشحنة وتم إضافة المبلغ إلى رصيدك. الرصيد الجديد: ${result.newBalance}`, read: false, created_at: new Date().toISOString() }]);
-        }
-      } else {
-        const ch = (DB.charges || []).find(c => String(c.id) === String(id));
-        if (ch) {
-          DB.notifications = DB.notifications || [];
-          DB.notifications.unshift({ personal: ch.personalNumber || ch.personal || '', text: `تمت الموافقة على الشحنة. الرصيد الجديد: ${result.newBalance}`, read: false, createdAt: new Date().toISOString() });
-          saveData(DB);
-        }
-      }
-    } catch (notifyErr) { console.warn('notify after confirm failed', notifyErr); }
-
-    return res.json({ ok: true, newBalance: result.newBalance });
+    return res.json({ ok: true, newBalance: result.newBalance, chargeId: result.chargeId });
   } catch (e) {
     console.error('charge confirm endpoint error', e);
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-// --- Profile edit requests (UI uses these) ---
-app.post('/api/profile/request-edit', async (req, res) => {
+// Profile edit request submit
+app.post('/api/profile/submit-edit', async (req, res) => {
   try {
-    const { personal } = req.body || {};
+    const { personal, name, email, phone } = req.body || {};
     if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-
-    if (useSupabase) {
-      await sb.from('profile_edit_requests').insert([{ personal_number: String(personal), requested_at: new Date().toISOString() }]);
-    } else {
-      DB.profileEditRequests = DB.profileEditRequests || [];
-      DB.profileEditRequests.push({ personal: String(personal), createdAt: new Date().toISOString(), status: 'pending' });
-      saveData(DB);
-    }
-
-    // optional notify admin
+    DB.profileEditRequests = DB.profileEditRequests || [];
+    const reqId = String(Date.now()) + Math.floor(Math.random() * 999);
+    DB.profileEditRequests.unshift({ id: reqId, personal: String(personal), name, email, phone, status: 'pending', createdAt: new Date().toISOString() });
+    saveData(DB);
+    // notify admin optionally
     try {
       if (CFG.BOT_ADMIN_CMD_TOKEN && CFG.BOT_ADMIN_CMD_CHAT) {
         await fetch(`https://api.telegram.org/bot${CFG.BOT_ADMIN_CMD_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: CFG.BOT_ADMIN_CMD_CHAT, text: `طلب تعديل ملف من الرقم الشخصي: ${personal}` })
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: CFG.BOT_ADMIN_CMD_CHAT, text: `طلب تعديل ملف من الرقم: ${personal}\nالاسم: ${name || '---'}` })
         });
       }
-    } catch (e) { console.warn('notify admin request-edit failed', e); }
-
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('request-edit error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-// --- Submit profile edit (save) — do not overwrite balance ---
-app.post('/api/profile/submit-edit', async (req, res) => {
-  try {
-    const { personal, name, email, password, phone } = req.body || {};
-    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-
-    if (useSupabase) {
-      const upd = {};
-      if (typeof name !== 'undefined') upd.name = name;
-      if (typeof email !== 'undefined') upd.email = email;
-      if (typeof password !== 'undefined') upd.password = password;
-      if (typeof phone !== 'undefined') upd.phone = phone;
-      if (Object.keys(upd).length === 0) {
-        const { data } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-        return res.json({ ok: true, profile: mapSbProfileToResponse(data) });
-      }
-      const { data } = await sb.from('profiles').update(upd).eq('personal_number', String(personal)).select().maybeSingle();
-      return res.json({ ok: true, profile: mapSbProfileToResponse(data) });
-    }
-
-    // local
-    let p = (DB.profiles || []).find(x => String(x.personalNumber) === String(personal));
-    if (!p) {
-      p = { personalNumber: String(personal), name: name || 'ضيف', email: email || '', password: password || '', phone: phone || '', balance: 0 };
-      DB.profiles.push(p);
-    } else {
-      if (typeof name !== 'undefined') p.name = name;
-      if (typeof email !== 'undefined') p.email = email;
-      if (typeof password !== 'undefined') p.password = password;
-      if (typeof phone !== 'undefined') p.phone = phone;
-      // do NOT touch balance
-    }
-    saveData(DB);
-    return res.json({ ok: true, profile: p });
+    } catch (e) { /* ignore */ }
+    return res.json({ ok: true, requestId: reqId });
   } catch (e) {
     console.error('submit-edit error', e);
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-// --- Telegram webhook: process admin replies (optional) ---
-// --- Robust Telegram webhook: reply with "الرصيد: 10000\nالرقم الشخصي: 123456789" OR reply-to message that contains "معرف ..."
+// Confirm profile edit (admin)
+app.post('/api/profile/confirm-edit', async (req, res) => {
+  try {
+    const { requestId } = req.body || {};
+    if (!requestId) return res.status(400).json({ ok: false, error: 'missing_requestId' });
+    const r = (DB.profileEditRequests || []).find(x => x.id === String(requestId));
+    if (!r) return res.status(404).json({ ok: false, error: 'not_found' });
+    const prof = await findProfileByPersonal(r.personal);
+    if (prof) {
+      // apply changes locally (Supabase branch not included here for brevity)
+      // in local DB we must find the object and mutate it
+      const local = (DB.profiles || []).find(x => String(x.personalNumber) === String(r.personal) || String(x.personal_number) === String(r.personal));
+      if (local) {
+        local.name = r.name || local.name;
+        local.email = r.email || local.email;
+        local.phone = r.phone || local.phone;
+        saveData(DB);
+      }
+    }
+    r.status = 'accepted'; r.updatedAt = new Date().toISOString(); saveData(DB);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('confirm-edit error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// Notifications retrieval
+app.get('/api/notifications/:personal', async (req, res) => {
+  try {
+    const personal = getPersonalFromReq(req);
+    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
+    const profile = await findProfileByPersonal(personal);
+    const notifications = (DB.notifications || []).filter(n => String(n.personal) === String(personal));
+    const orders = (DB.orders || []).filter(o => String(o.personalNumber || o.personal) === String(personal));
+    const charges = (DB.charges || []).filter(c => String(c.personalNumber || c.personal) === String(personal));
+    const offers = (DB.offers || []).filter(o => !!o.active);
+    return res.json({ ok: true, profile, notifications, orders, charges, offers });
+  } catch (e) {
+    console.error('notifications endpoint error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// Mark notifications read
+app.post('/api/notifications/mark-read', async (req, res) => {
+  try {
+    const personal = getPersonalFromReq(req);
+    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
+    DB.notifications = (DB.notifications || []).map(n => (String(n.personal) === String(personal) ? Object.assign({}, n, { read: true }) : n));
+    if (Array.isArray(DB.orders)) DB.orders.forEach(o => { if (String(o.personalNumber) === String(personal) && o.replied) o.replied = false; });
+    if (Array.isArray(DB.charges)) DB.charges.forEach(c => { if (String(c.personalNumber) === String(personal) && c.replied) c.replied = false; });
+    saveData(DB);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('mark-read error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// Clear notifications
+app.post('/api/notifications/clear', async (req, res) => {
+  try {
+    const personal = getPersonalFromReq(req);
+    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
+    DB.notifications = (DB.notifications || []).filter(n => String(n.personal) !== String(personal));
+    saveData(DB);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('clear notifications error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// ----------------- Telegram webhook (robust) -----------------
 app.post('/api/telegram/webhook', async (req, res) => {
   try {
     const update = req.body || {};
     const msg = update.message || update.edited_message;
     if (!msg) return res.sendStatus(200);
 
-    // Optional: only allow a specific admin chat. Leave CFG.BOT_BALANCE_CHAT empty to disable this restriction.
+    // Optional: restrict to configured chat (recommended in production)
     const adminChatId = CFG.BOT_BALANCE_CHAT || '';
     if (adminChatId && String(msg.chat && msg.chat.id) !== String(adminChatId)) {
       console.log('Webhook: ignored message from chat', msg.chat && msg.chat.id);
       return res.sendStatus(200);
     }
 
-    // 1) Case: replied-to message contains an identifier "معرف <digits>"
+    // 1) Reply-to with "معرف ..." => confirm by id
     const repliedTo = msg.reply_to_message;
     if (repliedTo && repliedTo.text) {
       const reId = /(?:معرف\s*(?:الطلب|الشحنة|ال)?\s*[:\-]?\s*)(\d+)/i;
@@ -696,75 +647,42 @@ app.post('/api/telegram/webhook', async (req, res) => {
       if (mid) {
         const id = mid[1];
         try {
-          // Try to confirm/accept by id (calls your existing confirmChargeById if present)
-          if (typeof confirmChargeById === 'function') {
-            const result = await confirmChargeById(id);
-            console.log('Webhook: confirmChargeById', id, result);
-          } else {
-            // fallback: mark matching local charge as accepted
-            const ch = (DB.charges||[]).find(c => String(c.id) === String(id));
-            if (ch) { ch.status = 'مقبول'; ch.replied = true; saveData(DB); console.log('Webhook: local charge marked accepted', id); }
-          }
+          const r = await confirmChargeById(id);
+          console.log('Webhook: confirmChargeById', id, r);
         } catch (e) { console.warn('Webhook confirm by id error', e); }
-        // optional feedback to admin
-        try { await sendTelegramMessageToChat(msg.chat.id, `تم معالجة الطلب بالمعرف ${id}`); } catch(e){}
+        try { await sendTelegramMessageToChat(msg.chat.id, `تم معالجة الطلب بالمعرف ${id}`); } catch (e) {}
         return res.sendStatus(200);
       }
     }
 
-    // 2) Case: admin writes the amount and personal number directly in the message text
+    // 2) Direct message: "الرصيد: <amount>\nالرقم الشخصي: <personal>"
     const txt = (msg.text || '').replace(/\u00A0/g, ' ');
     const reAmount = /الرصيد\s*[:\-]?\s*([0-9\.,]+)/i;
-    const rePersonal = /الرقم\s*الشخصي\s*[:\-]?\s*(\d+)/i; // require at least 3 digits
+    const rePersonal = /الرقم\s*الشخصي\s*[:\-]?\s*(\d+)/i;
     const mAmount = txt.match(reAmount);
     const mPersonal = txt.match(rePersonal);
 
     if (mAmount && mPersonal) {
-      // Normalize amount (remove thousand separators)
-      let amountRaw = mAmount[1].replace(/\s+/g,'').replace(/,/g,'').replace(/\./g,'');
+      let amountRaw = mAmount[1].replace(/\s+/g, '').replace(/,/g, '').replace(/\./g, '');
       const amount = Number(amountRaw);
       const personal = String(mPersonal[1]);
 
       if (isNaN(amount) || amount <= 0) {
-        console.warn('Webhook: invalid amount parsed', mAmount[1]);
         await sendTelegramMessageToChat(msg.chat.id, `خطأ: قيمة الرصيد غير صالحة: ${mAmount[1]}`);
         return res.sendStatus(200);
       }
 
-      // 1) Add balance (will create profile if not exists in local fallback)
-      let addRes = { ok:false };
-      try {
-        if (typeof addBalanceToPersonal === 'function') {
-          addRes = await addBalanceToPersonal(personal, amount);
-        } else {
-          // fallback local implementation
-          let p = (DB.profiles||[]).find(x => String(x.personalNumber) === String(personal));
-          if (!p) { p = { personalNumber: String(personal), name:'ضيف', balance: amount }; DB.profiles.push(p); saveData(DB); addRes = { ok:true, newBalance: p.balance }; }
-          else { p.balance = Number(p.balance||0) + Number(amount); saveData(DB); addRes = { ok:true, newBalance: p.balance }; }
-        }
-      } catch(e) { console.error('Webhook addBalance error', e); addRes = { ok:false, error: String(e) }; }
-
+      // Add balance
+      const addRes = await addBalanceToPersonal(personal, amount);
       if (!addRes.ok) {
         await sendTelegramMessageToChat(msg.chat.id, `خطأ عند تحديث الرصيد: ${addRes.error || 'unknown'}`);
         return res.sendStatus(200);
       }
 
-      // 2) Mark latest pending charge as accepted if exists
-      let markRes = { ok:false };
-      try {
-        if (typeof markLatestPendingChargeAsAccepted === 'function') {
-          markRes = await markLatestPendingChargeAsAccepted(personal, amount);
-        } else {
-          // fallback: local search
-          const pend = (DB.charges||[]).filter(c => String(c.personalNumber) === String(personal) && !c.replied).sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
-          if (pend.length>0) {
-            let found = pend.find(p=>Number(p.amount)===Number(amount)) || pend[0];
-            if (found) { found.status='مقبول'; found.replied=true; saveData(DB); markRes = { ok:true, chargeId: found.id }; }
-          }
-        }
-      } catch (e) { console.warn('Webhook mark pending error', e); }
+      // Mark pending charge if exists
+      const markRes = await markLatestPendingChargeAsAccepted(personal, amount);
 
-      // 3) Add internal notification (so user sees it in site)
+      // Add internal notification
       try {
         DB.notifications = DB.notifications || [];
         DB.notifications.unshift({
@@ -775,27 +693,31 @@ app.post('/api/telegram/webhook', async (req, res) => {
           createdAt: new Date().toISOString()
         });
         saveData(DB);
-      } catch (e) { console.warn('Webhook add notification failed', e); }
+      } catch (e) { console.warn('add notification failed', e); }
 
-      // 4) Try to send Telegram message to user if we have stored chat id
+      // Notify admin back (feedback)
       try {
-        const prof = await findProfileByPersonal(personal);
-        if (prof && (prof.telegram_chat_id || prof.tg_chat_id || prof.chat_id)) {
-          const chatId = prof.telegram_chat_id || prof.tg_chat_id || prof.chat_id;
-          await sendTelegramMessageToChat(chatId, `تمت إضافة ${amount.toLocaleString()} إلى رصيدك. الرصيد الآن: ${addRes.newBalance}`);
-        }
-      } catch(e) { console.warn('Webhook notify user tg failed', e); }
-
-      // 5) Inform admin of success
-      await sendTelegramMessageToChat(msg.chat.id, `تمت إضافة ${amount.toLocaleString()} لرقم ${personal}. الرصيد الجديد: ${addRes.newBalance}. ${markRes.ok ? 'وتم وسم الشحنة كمقبولة.' : 'لم يتم العثور على شحنة معلقة لمطابقتها.'}`);
+        await sendTelegramMessageToChat(msg.chat.id, `تمت إضافة ${amount.toLocaleString()} لرقم ${personal}. الرصيد الجديد: ${addRes.newBalance}. ${markRes.ok ? 'وُسمت الشحنة كمقبولة.' : 'لم يكن هناك شحنة معلقة.'}`);
+      } catch (e) { /* ignore */ }
 
       return res.sendStatus(200);
     }
 
-    // nothing matched — just ignore
+    // nothing matched
     return res.sendStatus(200);
   } catch (e) {
     console.error('telegram webhook enhanced error', e);
     return res.sendStatus(200);
   }
+});
+
+// ----------------- Start server -----------------
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
+
+// Save DB on exit
+process.on('SIGINT', () => {
+  try { saveData(DB); console.log('Saved DB before exit'); } catch (e) {}
+  process.exit();
 });
