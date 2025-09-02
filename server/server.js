@@ -1,12 +1,14 @@
-// server.js — نسخة كاملة ومُعدّلة مع CFG مُضمّن (قِيَم جاهزة للعمل)
-// الحزم المطلوبة: express, cors, node-fetch@2, multer, @supabase/supabase-js
-// تشغيل: node server.js
+// server.js — Supabase-enabled backend (final)
+// Req: express, cors, node-fetch@2, multer, @supabase/supabase-js
+// Usage: set SUPABASE_URL and SUPABASE_SERVICE_KEY to enable Supabase storage.
+// Place in project root and run: node server.js
 
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch'); // v2
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -16,72 +18,42 @@ app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
-// ----------------- CFG (مضمّن بالقيم التي أرسلتها) -----------------
+// ---------------- CONFIG ----------------
 const CFG = {
-  PORT,
-
-  // Supabase
-  SUPABASE_URL: process.env.SUPABASE_URL || "https://ugdktasyhuojvdunwwyd.supabase.co",
-  SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnZGt0YXN5aHVvanZkdW53d3lkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1Njc5NzU1NSwiZXhwIjoyMDcyMzczNTU1fQ.9_EnpQ8JCIhBfr9CXoVvK26NlQMbWmiZGB9fZ5FR6pQ",
-
-  // ImgBB
-  IMGBB_KEY: process.env.IMGBB_KEY || "e5603dfd5675ed2b5a671577abcf6d33",
-
-  // Telegram bots & chats (مضمّن)
-  BOT_ADMIN_CMD_TOKEN: process.env.BOT_ADMIN_CMD_TOKEN || "7867503081:AAE32J-TrMh52QYHrbPzsKxnM7qbgA9iKCo",
-  BOT_ADMIN_CMD_CHAT: process.env.BOT_ADMIN_CMD_CHAT || "7649409589",
-
-  BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || "8242410438:AAHtm6-aIldfmTe1JQVnhdYkOIY3MaN4aFA",
-  BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || "7649409589",
-
-  BOT_LOGIN_REPORT_TOKEN: process.env.BOT_LOGIN_REPORT_TOKEN || "8322394934:AAFik8dEU71oOxBCHlhOVNKFGATWnqlg-_8",
-  BOT_LOGIN_REPORT_CHAT: process.env.BOT_LOGIN_REPORT_CHAT || "7649409589",
-
-  BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || "7909957386:AAEQZDloKb-JCcUInKiw5gmSmThPuyruxbU",
-  BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || "7649409589",
-
-  BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "7976416746:AAGyvWAxanxhkz--4c6U_3-NA2TGBV4lJ9Y",
-  BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || "7649409589",
-
-  BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || "8484157462:AAGHyBqwL9k1EmzvXAIZkb9UNDcwIGMINAs",
-  BOT_ORDER_CHAT: process.env.BOT_ORDER_CHAT || "7649409589",
-
-  // Notice: the names you sent used CFG_BOT_BALANCE_* — we map them to BOT_BALANCE_*
-  BOT_BALANCE_TOKEN: process.env.CFG_BOT_BALANCE_TOKEN || "8028609250:AAHXWR7PlZpBieM5Sx0oJI0dbUczxs9XJIg",
-  BOT_BALANCE_CHAT: process.env.CFG_BOT_BALANCE_CHAT || "7649409589",
-
-  // Optional: if you want to restrict admin commands additionally to specific user ids
-  ADMIN_ALLOWED_USERS: [] // put numeric Telegram user IDs here if needed, e.g. [12345678]
+  SUPABASE_URL: process.env.SUPABASE_URL || process.env.SUPABASE_URL || '',
+  SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_KEY || '',
+  // Telegram admin/notifications (optional)
+  BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || process.env.BOT_ORDER_TOKEN || '',
+  BOT_ORDER_CHAT: process.env.BOT_ORDER_CHAT || '',
+  BOT_BALANCE_TOKEN: process.env.BOT_BALANCE_TOKEN || process.env.CFG_BOT_BALANCE_TOKEN || '',
+  BOT_BALANCE_CHAT: process.env.BOT_BALANCE_CHAT || process.env.CFG_BOT_BALANCE_CHAT || '',
+  BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || '',
+  BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || '',
+  BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || '',
+  BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || '',
+  IMGBB_KEY: process.env.IMGBB_KEY || ''
 };
 
-// ----------------- Supabase client (اختياري) -----------------
+// ---------------- Supabase client (optional) ----------------
 const useSupabase = !!(CFG.SUPABASE_URL && CFG.SUPABASE_SERVICE_KEY);
 let sb = null;
 if (useSupabase) {
   try {
     sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_SERVICE_KEY, { global: { fetch } });
-    console.log('Supabase client initialized');
+    console.log('Supabase: enabled');
   } catch (e) {
-    console.warn('Supabase init failed, falling back to local DB', e);
+    console.warn('Supabase init failed — falling back to local DB', e);
   }
+} else {
+  console.log('Supabase: not configured — using local data.json fallback');
 }
 
-// ----------------- Local DB fallback (data.json) -----------------
+// ---------------- Local DB fallback ----------------
 const DATA_FILE = path.join(__dirname, 'data.json');
-
 function loadData() {
   try {
     if (!fs.existsSync(DATA_FILE)) {
-      const init = {
-        profiles: [],
-        orders: [],
-        charges: [],
-        offers: [],
-        notifications: [],
-        profileEditRequests: [],
-        blocked: [],
-        tgOffsets: {}
-      };
+      const init = { profiles: [], orders: [], charges: [], offers: [], notifications: [], profileEditRequests: [], blocked: [] };
       fs.writeFileSync(DATA_FILE, JSON.stringify(init, null, 2));
       return init;
     }
@@ -89,36 +61,15 @@ function loadData() {
     return JSON.parse(raw);
   } catch (e) {
     console.error('loadData error', e);
-    return { profiles: [], orders: [], charges: [], offers: [], notifications: [], profileEditRequests: [], blocked: [], tgOffsets: {} };
+    return { profiles: [], orders: [], charges: [], offers: [], notifications: [], profileEditRequests: [], blocked: [] };
   }
 }
-
 function saveData(d) {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 2));
-  } catch (e) {
-    console.error('saveData error', e);
-  }
+  try { fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 2)); } catch (e) { console.error('saveData error', e); }
 }
-
 let DB = loadData();
 
-// ----------------- Helpers -----------------
-
-// Extract personal from various possible names (body, params, query)
-function getPersonalFromReq(req) {
-  if (!req) return null;
-  const b = req.body || {};
-  if (b.personal) return String(b.personal);
-  if (b.personalNumber) return String(b.personalNumber);
-  if (b.personal_number) return String(b.personal_number);
-  if (req.params && req.params.personal) return String(req.params.personal);
-  if (req.query && (req.query.personal || req.query.personalNumber || req.query.personal_number)) {
-    return String(req.query.personal || req.query.personalNumber || req.query.personal_number);
-  }
-  return null;
-}
-
+// ---------------- Helpers ----------------
 function mapSbProfileToResponse(row) {
   if (!row) return null;
   return {
@@ -130,8 +81,26 @@ function mapSbProfileToResponse(row) {
     balance: Number(row.balance || 0),
     canEdit: !!row.can_edit,
     lastLogin: row.last_login || null,
-    telegram_chat_id: row.telegram_chat_id || row.tg_chat_id || row.chat_id || null
+    telegram_chat_id: row.telegram_chat_id || null
   };
+}
+
+async function genUniquePersonalNumber() {
+  // 7..9 digit number
+  for (let i = 0; i < 10; i++) {
+    const n = String(Math.floor(1000000 + Math.random() * 9000000));
+    // check supabase
+    if (useSupabase && sb) {
+      try {
+        const { data, error } = await sb.from('profiles').select('personal_number').eq('personal_number', n).limit(1).maybeSingle();
+        if (!data) return n;
+      } catch (e) { /* ignore and fallback to local check */ }
+    }
+    // local check
+    if (!DB.profiles.some(p => String(p.personalNumber) === n || String(p.personal_number) === n)) return n;
+  }
+  // fallback: timestamp
+  return String(Date.now()).slice(-9);
 }
 
 async function findProfileByPersonal(personal) {
@@ -139,38 +108,13 @@ async function findProfileByPersonal(personal) {
   try {
     if (useSupabase && sb) {
       const { data, error } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-      if (error) console.warn('supabase findProfile error', error);
+      if (error) console.warn('findProfileByPersonal sb error', error);
       if (data) return mapSbProfileToResponse(data);
+      return null;
     }
-  } catch (e) {
-    console.warn('findProfileByPersonal supabase err', e);
-  }
+  } catch (e) { console.warn('findProfileByPersonal supabase', e); }
   const p = DB.profiles.find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
   if (!p) return null;
-  return {
-    personalNumber: p.personalNumber || p.personal_number,
-    name: p.name, email: p.email, phone: p.phone, password: p.password,
-    balance: Number(p.balance || 0), canEdit: !!p.canEdit, lastLogin: p.lastLogin, telegram_chat_id: p.telegram_chat_id
-  };
-}
-
-async function ensureProfile(personal) {
-  if (!personal) return null;
-  try {
-    if (useSupabase && sb) {
-      const { data: existing, error } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-      if (error) console.warn('ensureProfile supabase sel err', error);
-      if (existing) return mapSbProfileToResponse(existing);
-      const ins = { personal_number: String(personal), name: 'ضيف', email: '', phone: '', password: '', balance: 0, can_edit: false, last_login: new Date().toISOString() };
-      const { data } = await sb.from('profiles').insert([ins]).select().maybeSingle();
-      return mapSbProfileToResponse(data);
-    }
-  } catch (e) { console.warn('ensureProfile supabase err', e); }
-  let p = DB.profiles.find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
-  if (!p) {
-    p = { personalNumber: String(personal), personal_number: String(personal), name: 'ضيف', email: '', phone: '', password: '', balance: 0, canEdit: false, lastLogin: new Date().toISOString() };
-    DB.profiles.push(p); saveData(DB);
-  }
   return {
     personalNumber: p.personalNumber || p.personal_number,
     name: p.name, email: p.email, phone: p.phone, password: p.password,
@@ -178,11 +122,29 @@ async function ensureProfile(personal) {
   };
 }
 
-// Send Telegram message (optional)
+async function findProfileByIdentity({ name, email, phone }) {
+  // match by (name + email + phone)
+  if (useSupabase && sb) {
+    try {
+      const q = sb.from('profiles').select('*').ilike('name', String(name || '')).eq('email', String(email || '')).eq('phone', String(phone || '')).limit(1).maybeSingle();
+      const { data, error } = await q;
+      if (error) console.warn('findProfileByIdentity supabase err', error);
+      if (data) return mapSbProfileToResponse(data);
+    } catch (e) { console.warn('findProfileByIdentity supabase', e); }
+  } else {
+    const p = DB.profiles.find(x =>
+      String(x.name) === String(name) && String(x.email) === String(email) && String(x.phone) === String(phone)
+    );
+    if (p) return { personalNumber: p.personalNumber || p.personal_number, name: p.name, email: p.email, phone: p.phone, password: p.password, balance: Number(p.balance || 0) };
+  }
+  return null;
+}
+
+// Send message to admin chat (optional) — used for admin feedback
 async function sendTelegramMessageToChat(chatId, text, tokenOverride) {
   try {
     if (!chatId) return null;
-    const token = tokenOverride || CFG.BOT_NOTIFY_TOKEN || CFG.BOT_BALANCE_TOKEN || CFG.BOT_ADMIN_CMD_TOKEN;
+    const token = tokenOverride || CFG.BOT_NOTIFY_TOKEN || CFG.BOT_BALANCE_TOKEN || CFG.BOT_ORDER_TOKEN || CFG.BOT_ADMIN_CMD_TOKEN;
     if (!token) return null;
     const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
@@ -196,33 +158,43 @@ async function sendTelegramMessageToChat(chatId, text, tokenOverride) {
   }
 }
 
-// Add balance to profile (returns {ok,newBalance} or {ok:false,error})
+// Add balance: updates DB (Supabase preferred), returns { ok, newBalance } or { ok:false,error }
 async function addBalanceToPersonal(personal, amount) {
   try {
     const amt = Number(amount || 0);
-    if (isNaN(amt)) return { ok: false, error: 'invalid_amount' };
+    if (isNaN(amt) || amt <= 0) return { ok: false, error: 'invalid_amount' };
 
     if (useSupabase && sb) {
-      const { data: profRow } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+      // read profile
+      const { data: profRow, error: selErr } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+      if (selErr) console.warn('addBalance select err', selErr);
       if (!profRow) {
-        const { data: newProf } = await sb.from('profiles').insert([{ personal_number: String(personal), name: 'ضيف', balance: amt }]).select().maybeSingle();
-        return { ok: true, newBalance: Number(newProf.balance || 0) };
+        // create profile with balance
+        const ins = { personal_number: String(personal), name: 'ضيف', email: '', password: '', phone: '', balance: amt, can_edit: false, last_login: new Date().toISOString() };
+        const { data: newProf, error: insErr } = await sb.from('profiles').insert([ins]).select().maybeSingle();
+        if (insErr) console.warn('addBalance insert err', insErr);
+        return { ok: true, newBalance: Number(newProf.balance || amt) };
       }
       const oldBal = Number(profRow.balance || 0);
       const newBal = oldBal + amt;
-      const { error } = await sb.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal));
-      if (error) console.warn('addBalance supabase update err', error);
+      const { error: upErr } = await sb.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal));
+      if (upErr) console.warn('addBalance update err', upErr);
+      // add notification
+      await sb.from('notifications').insert([{ personal_number: String(personal), text: `تمت إضافة مبلغ ${amt} إلى رصيدك. الرصيد الجديد: ${newBal}`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
       return { ok: true, newBalance: newBal };
     }
 
     // local fallback
     let p = (DB.profiles || []).find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
     if (!p) {
-      p = { personalNumber: String(personal), personal_number: String(personal), name: 'ضيف', email: '', password: '', phone: '', balance: Number(amount), canEdit: false, lastLogin: new Date().toISOString() };
+      p = { personalNumber: String(personal), personal_number: String(personal), name: 'ضيف', email: '', password: '', phone: '', balance: amt, canEdit: false, lastLogin: new Date().toISOString() };
       DB.profiles.push(p);
     } else {
-      p.balance = Number(p.balance || 0) + Number(amount);
+      p.balance = Number(p.balance || 0) + amt;
     }
+    // add notification local
+    DB.notifications = DB.notifications || [];
+    DB.notifications.unshift({ id: String(Date.now()), personal: String(personal), text: `تمت إضافة مبلغ ${amt} إلى رصيدك. الرصيد الجديد: ${p.balance}`, read: false, createdAt: new Date().toISOString() });
     saveData(DB);
     return { ok: true, newBalance: Number(p.balance) };
   } catch (e) {
@@ -231,11 +203,12 @@ async function addBalanceToPersonal(personal, amount) {
   }
 }
 
-// Mark latest pending charge as accepted (tries to match amount)
+// Mark latest pending charge as accepted (optional): returns { ok, chargeId } or error
 async function markLatestPendingChargeAsAccepted(personal, amount) {
   try {
+    if (!personal) return { ok: false, error: 'missing_personal' };
     if (useSupabase && sb) {
-      const { data: pending } = await sb.from('charges').select('*').eq('personal_number', String(personal)).eq('replied', false).order('created_at', { ascending: false }).limit(5);
+      const { data: pending } = await sb.from('charges').select('*').eq('personal_number', String(personal)).eq('replied', false).order('created_at', { ascending: false }).limit(10);
       if (pending && pending.length > 0) {
         let found = pending.find(p => Number(p.amount) === Number(amount));
         if (!found) found = pending[0];
@@ -246,13 +219,14 @@ async function markLatestPendingChargeAsAccepted(personal, amount) {
       }
       return { ok: false, error: 'no_pending_charge' };
     }
-
-    const pendingLocal = (DB.charges || []).filter(c => String(c.personalNumber || c.personal) === String(personal) && !c.replied).sort((a, b) => new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at));
+    // local
+    const pendingLocal = (DB.charges || []).filter(c => String(c.personalNumber || c.personal) === String(personal) && !c.replied).sort((a,b)=> new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at));
     if (pendingLocal.length > 0) {
       let found = pendingLocal.find(p => Number(p.amount) === Number(amount));
       if (!found) found = pendingLocal[0];
       if (found) {
-        found.status = 'مقبول'; found.replied = true; found.updatedAt = new Date().toISOString(); saveData(DB);
+        found.status = 'مقبول'; found.replied = true; found.updatedAt = new Date().toISOString();
+        saveData(DB);
         return { ok: true, chargeId: found.id || found.cid || null };
       }
     }
@@ -263,26 +237,26 @@ async function markLatestPendingChargeAsAccepted(personal, amount) {
   }
 }
 
-// Confirm charge by id (used by reply-to id)
+// confirmChargeById: accept a charge and credit balance
 async function confirmChargeById(id) {
-  if (!id) return { ok: false, error: 'missing_id' };
   try {
+    if (!id) return { ok: false, error: 'missing_id' };
     if (useSupabase && sb) {
       const { data: chargeRow } = await sb.from('charges').select('*').eq('id', id).limit(1).maybeSingle();
       if (!chargeRow) return { ok: false, error: 'charge_not_found' };
       if (chargeRow.replied) return { ok: false, error: 'already_confirmed' };
       const amount = Number(chargeRow.amount || 0);
       const personal = String(chargeRow.personal_number || chargeRow.personal || '');
-      const { data: profileRow } = await sb.from('profiles').select('*').eq('personal_number', personal).limit(1).maybeSingle();
-      if (!profileRow) return { ok: false, error: 'profile_not_found' };
-      const oldBal = Number(profileRow.balance || 0);
+      // update profile balance
+      const { data: profRow } = await sb.from('profiles').select('*').eq('personal_number', personal).limit(1).maybeSingle();
+      if (!profRow) return { ok: false, error: 'profile_not_found' };
+      const oldBal = Number(profRow.balance || 0);
       const newBal = oldBal + (isNaN(amount) ? 0 : amount);
       await sb.from('profiles').update({ balance: newBal }).eq('personal_number', personal);
-      await sb.from('charges').update({ status: 'مقبول', replied: true }).eq('id', id).eq('replied', false);
+      await sb.from('charges').update({ status: 'مقبول', replied: true }).eq('id', id);
       await sb.from('notifications').insert([{ personal_number: personal, text: `تمت إضافة مبلغ ${amount} إلى رصيدك. الرصيد الآن: ${newBal}`, read: false, created_at: new Date().toISOString() }]);
       return { ok: true, newBalance: newBal, chargeId: id };
     }
-
     // local fallback
     const ch = (DB.charges || []).find(c => String(c.id) === String(id));
     if (!ch) return { ok: false, error: 'charge_not_found' };
@@ -303,149 +277,84 @@ async function confirmChargeById(id) {
   }
 }
 
-// Confirm order by id (for order bot)
-async function confirmOrderById(id) {
-  if (!id) return { ok: false, error: 'missing_id' };
+// ---------------- End helpers ----------------
+
+// ---------------- Upload endpoint ----------------
+const publicDir = path.join(__dirname, 'public');
+if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+const uploadsDir = path.join(publicDir, 'uploads'); if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const memoryStorage = multer.memoryStorage();
+const uploadMemory = multer({ storage: memoryStorage });
+
+app.post('/api/upload', uploadMemory.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ ok: false, error: 'no_file' });
   try {
-    if (useSupabase && sb) {
-      const { data: orderRow } = await sb.from('orders').select('*').eq('id', id).limit(1).maybeSingle();
-      if (!orderRow) return { ok: false, error: 'order_not_found' };
-      if (orderRow.replied) return { ok: false, error: 'already_confirmed' };
-      await sb.from('orders').update({ status: 'تمت المعالجة', replied: true }).eq('id', id).eq('replied', false);
-      await sb.from('notifications').insert([{ personal_number: orderRow.personal_number, text: `طلبك #${id} تمّت معالجته.`, read: false, created_at: new Date().toISOString() }]);
-      return { ok: true, orderId: id };
-    }
-    const ord = (DB.orders || []).find(o => String(o.id) === String(id));
-    if (!ord) return { ok: false, error: 'order_not_found' };
-    if (ord.replied) return { ok: false, error: 'already_confirmed' };
-    ord.status = 'تمت المعالجة'; ord.replied = true; ord.updatedAt = new Date().toISOString();
-    DB.notifications = DB.notifications || [];
-    DB.notifications.unshift({ id: String(Date.now()), personal: ord.personalNumber, text: `طلبك #${id} تمّت معالجته.`, read: false, createdAt: new Date().toISOString() });
-    saveData(DB);
-    return { ok: true, orderId: id };
+    const name = Date.now() + '-' + (req.file.originalname || 'f.bin');
+    fs.writeFileSync(path.join(uploadsDir, name), req.file.buffer);
+    const url = `${req.protocol}://${req.get('host')}/uploads/${encodeURIComponent(name)}`;
+    return res.json({ ok: true, url, provider: 'local' });
   } catch (e) {
-    console.error('confirmOrderById error', e);
-    return { ok: false, error: String(e) };
+    console.error('upload error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
   }
-}
+});
 
-// Ban / unban helpers
-async function banPersonal(personal, reason = '') {
-  try {
-    if (!personal) return { ok: false, error: 'missing_personal' };
-    if (useSupabase && sb) {
-      await sb.from('blocked').insert([{ personal_number: String(personal), reason, created_at: new Date().toISOString() }]);
-      return { ok: true };
-    }
-    DB.blocked = DB.blocked || [];
-    if (!DB.blocked.includes(String(personal))) { DB.blocked.push(String(personal)); saveData(DB); }
-    return { ok: true };
-  } catch (e) {
-    console.error('banPersonal error', e);
-    return { ok: false, error: String(e) };
-  }
-}
-async function unbanPersonal(personal) {
-  try {
-    if (!personal) return { ok: false, error: 'missing_personal' };
-    if (useSupabase && sb) {
-      await sb.from('blocked').delete().eq('personal_number', String(personal));
-      return { ok: true };
-    }
-    DB.blocked = (DB.blocked || []).filter(x => String(x) !== String(personal)); saveData(DB);
-    return { ok: true };
-  } catch (e) {
-    console.error('unbanPersonal error', e);
-    return { ok: false, error: String(e) };
-  }
-}
-
-// ----------------- Endpoints -----------------
-
-app.get('/api/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString(), supabase: useSupabase }));
-
-// Register
+// --------------- Register ----------------
 app.post('/api/register', async (req, res) => {
   try {
     const { name, email, password, phone } = req.body || {};
-    let personalNumber = req.body.personalNumber || req.body.personal || req.body.personal_number || null;
-    if (!personalNumber) {
-      // generate unique personal number
-      let n;
-      do {
-        n = String(Math.floor(1000000 + Math.random() * 9000000));
-      } while ((DB.profiles || []).some(p => String(p.personalNumber) === n || String(p.personal_number) === n));
-      personalNumber = n;
-    }
-    if (useSupabase && sb) {
-      const { data: existing } = await sb.from('profiles').select('*').eq('personal_number', String(personalNumber)).limit(1).maybeSingle();
-      if (existing) {
-        // update some fields without touching balance
-        const upd = {};
-        if (typeof name !== 'undefined') upd.name = name;
-        if (typeof email !== 'undefined') upd.email = email;
-        if (typeof password !== 'undefined') upd.password = password;
-        if (typeof phone !== 'undefined') upd.phone = phone;
-        if (Object.keys(upd).length > 0) {
-          const { data } = await sb.from('profiles').update(upd).eq('personal_number', String(personalNumber)).select().maybeSingle();
-          return res.json({ ok: true, profile: mapSbProfileToResponse(data) });
-        }
-        return res.json({ ok: true, profile: mapSbProfileToResponse(existing) });
-      } else {
-        const ins = { personal_number: String(personalNumber), name: name || 'ضيف', email: email || '', password: password || '', phone: phone || '', balance: 0, can_edit: false, last_login: new Date().toISOString() };
-        const { data } = await sb.from('profiles').insert([ins]).select().maybeSingle();
-        return res.json({ ok: true, profile: mapSbProfileToResponse(data) });
-      }
-    }
+    if (!name || !email || !password || !phone) return res.status(400).json({ ok: false, error: 'missing_fields' });
 
-    // local fallback
-    DB.profiles = DB.profiles || [];
-    let p = DB.profiles.find(x => String(x.personalNumber) === String(personalNumber) || String(x.personal_number) === String(personalNumber));
-    if (!p) {
-      p = { personalNumber: String(personalNumber), personal_number: String(personalNumber), name: name || 'ضيف', email: email || '', password: password || '', phone: phone || '', balance: 0, canEdit: false, createdAt: new Date().toISOString() };
-      DB.profiles.push(p);
+    const personalNumber = await genUniquePersonalNumber();
+    const newProfile = {
+      personal_number: personalNumber,
+      name: name || 'ضيف',
+      email: email || '',
+      password: password || '',
+      phone: phone || '',
+      balance: 0,
+      can_edit: false,
+      last_login: new Date().toISOString()
+    };
+
+    if (useSupabase && sb) {
+      const { data, error } = await sb.from('profiles').insert([newProfile]).select().maybeSingle();
+      if (error) console.warn('register insert err', error);
+      return res.json({ ok: true, profile: mapSbProfileToResponse(data || { personal_number: personalNumber, ...newProfile }) });
     } else {
-      if (typeof name !== 'undefined') p.name = name;
-      if (typeof email !== 'undefined') p.email = email;
-      if (typeof password !== 'undefined') p.password = password;
-      if (typeof phone !== 'undefined') p.phone = phone;
-      // do not touch balance
+      const pLocal = { personalNumber: personalNumber, name: newProfile.name, email: newProfile.email, password: newProfile.password, phone: newProfile.phone, balance: 0, canEdit: false, lastLogin: newProfile.last_login };
+      DB.profiles.push(pLocal); saveData(DB);
+      return res.json({ ok: true, profile: { personalNumber, name: pLocal.name, email: pLocal.email, phone: pLocal.phone, balance: 0 } });
     }
-    saveData(DB);
-    return res.json({ ok: true, profile: p });
   } catch (e) {
     console.error('register error', e);
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-// Login
+// --------------- Login (only search by name+email+phone+password) ----------------
 app.post('/api/login', async (req, res) => {
   try {
-    const b = req.body || {};
-    const personal = b.personal || b.personalNumber || b.personal_number;
-    const password = b.password;
-    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
+    const { name, email, phone, password } = req.body || {};
+    if (!name || !email || !phone || !password) return res.status(400).json({ ok: false, error: 'missing_fields' });
 
-    let profile = null;
-    if (useSupabase && sb) {
-      const { data, error } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-      if (error) console.warn('login supabase select error', error);
-      profile = data;
-    } else {
-      profile = (DB.profiles || []).find(p => String(p.personalNumber) === String(personal) || String(p.personal_number) === String(personal));
+    // find by combination
+    const profile = await findProfileByIdentity({ name, email, phone });
+    if (!profile) {
+      // explicit: do NOT auto-create — inform client to offer "create account"
+      return res.status(404).json({ ok: false, error: 'not_found' });
+    }
+    // password check
+    if (profile.password && String(profile.password) !== String(password)) {
+      return res.status(401).json({ ok: false, error: 'wrong_password' });
     }
 
-    if (!profile) return res.status(404).json({ ok: false, error: 'not_found' });
-    if (password && profile.password && String(profile.password) !== String(password)) {
-      return res.status(403).json({ ok: false, error: 'wrong_password' });
-    }
-
-    // update last login
+    // Update last login (best-effort)
     try {
-      if (useSupabase && sb) await sb.from('profiles').update({ last_login: new Date().toISOString() }).eq('personal_number', String(personal));
-      else {
-        const p = (DB.profiles || []).find(x => String(x.personalNumber) === String(personal) || String(x.personal_number) === String(personal));
+      if (useSupabase && sb) {
+        await sb.from('profiles').update({ last_login: new Date().toISOString() }).eq('personal_number', String(profile.personalNumber));
+      } else {
+        const p = DB.profiles.find(x => String(x.personalNumber) === String(profile.personalNumber) || String(x.personal_number) === String(profile.personalNumber));
         if (p) { p.lastLogin = new Date().toISOString(); saveData(DB); }
       }
     } catch (e) { /* ignore */ }
@@ -457,137 +366,30 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Create charge (user requests top-up)
-app.post('/api/charge', async (req, res) => {
-  try {
-    const { personal, amount, phone, method, fileLink } = req.body || {};
-    if (!personal || !amount) return res.status(400).json({ ok: false, error: 'missing_fields' });
-    const chargeId = String(Date.now()) + Math.floor(Math.random() * 999);
-    const charge = {
-      id: chargeId,
-      personalNumber: String(personal),
-      phone: phone || '',
-      amount: Number(amount),
-      method: method || '',
-      fileLink: fileLink || '',
-      status: 'قيد المراجعة',
-      replied: false,
-      createdAt: new Date().toISOString()
-    };
-
-    if (useSupabase && sb) {
-      await sb.from('charges').insert([{
-        id: charge.id,
-        personal_number: charge.personalNumber,
-        phone: charge.phone,
-        amount: charge.amount,
-        method: charge.method,
-        file_link: charge.fileLink,
-        status: charge.status,
-        replied: charge.replied,
-        created_at: charge.createdAt
-      }]);
-    } else {
-      DB.charges = DB.charges || [];
-      DB.charges.unshift(charge);
-      saveData(DB);
-    }
-
-    // notify admin/chat about new charge (optional)
-    try {
-      if (CFG.BOT_BALANCE_TOKEN && CFG.BOT_BALANCE_CHAT) {
-        await fetch(`https://api.telegram.org/bot${CFG.BOT_BALANCE_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: CFG.BOT_BALANCE_CHAT, text:
-            `طلب شحن جديد\nمعرف الشحنة: ${chargeId}\nالرقم الشخصي: ${personal}\nالمبلغ: ${amount}` })
-        });
-      }
-    } catch (e) { console.warn('notify admin about charge failed', e); }
-
-    return res.json({ ok: true, charge });
-  } catch (e) {
-    console.error('charge error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-// Confirm charge by ID (HTTP endpoint)
-app.post('/api/charge/confirm', async (req, res) => {
-  try {
-    const id = req.body && (req.body.id || req.body.chargeId);
-    if (!id) return res.status(400).json({ ok: false, error: 'missing_id' });
-    const result = await confirmChargeById(id);
-    if (!result.ok) return res.status(400).json(result);
-    return res.json({ ok: true, newBalance: result.newBalance, chargeId: result.chargeId });
-  } catch (e) {
-    console.error('charge confirm endpoint error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-// Profile edit request submit
-app.post('/api/profile/submit-edit', async (req, res) => {
-  try {
-    const { personal, name, email, phone } = req.body || {};
-    if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-    DB.profileEditRequests = DB.profileEditRequests || [];
-    const reqId = String(Date.now()) + Math.floor(Math.random() * 999);
-    DB.profileEditRequests.unshift({ id: reqId, personal: String(personal), name, email, phone, status: 'pending', createdAt: new Date().toISOString() });
-    saveData(DB);
-    // notify admin optionally
-    try {
-      if (CFG.BOT_ADMIN_CMD_TOKEN && CFG.BOT_ADMIN_CMD_CHAT) {
-        await fetch(`https://api.telegram.org/bot${CFG.BOT_ADMIN_CMD_TOKEN}/sendMessage`, {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: CFG.BOT_ADMIN_CMD_CHAT, text: `طلب تعديل ملف من الرقم: ${personal}\nالاسم: ${name || '---'}` })
-        });
-      }
-    } catch (e) { /* ignore */ }
-    return res.json({ ok: true, requestId: reqId });
-  } catch (e) {
-    console.error('submit-edit error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-// Confirm profile edit (admin)
-app.post('/api/profile/confirm-edit', async (req, res) => {
-  try {
-    const { requestId } = req.body || {};
-    if (!requestId) return res.status(400).json({ ok: false, error: 'missing_requestId' });
-    const r = (DB.profileEditRequests || []).find(x => x.id === String(requestId));
-    if (!r) return res.status(404).json({ ok: false, error: 'not_found' });
-    const prof = await findProfileByPersonal(r.personal);
-    if (prof) {
-      // apply changes locally (Supabase branch not included here for brevity)
-      // in local DB we must find the object and mutate it
-      const local = (DB.profiles || []).find(x => String(x.personalNumber) === String(r.personal) || String(x.personal_number) === String(r.personal));
-      if (local) {
-        local.name = r.name || local.name;
-        local.email = r.email || local.email;
-        local.phone = r.phone || local.phone;
-        saveData(DB);
-      }
-    }
-    r.status = 'accepted'; r.updatedAt = new Date().toISOString(); saveData(DB);
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('confirm-edit error', e);
-    return res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-
-// Notifications retrieval
+// --------------- Notifications & data retrieval ---------------
 app.get('/api/notifications/:personal', async (req, res) => {
   try {
-    const personal = getPersonalFromReq(req);
+    const personal = req.params.personal;
     if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
+
     const profile = await findProfileByPersonal(personal);
-    const notifications = (DB.notifications || []).filter(n => String(n.personal) === String(personal));
-    const orders = (DB.orders || []).filter(o => String(o.personalNumber || o.personal) === String(personal));
-    const charges = (DB.charges || []).filter(c => String(c.personalNumber || c.personal) === String(personal));
-    const offers = (DB.offers || []).filter(o => !!o.active);
+    let notifications = [], orders = [], charges = [], offers = [];
+
+    if (useSupabase && sb) {
+      try {
+        const { data: nots } = await sb.from('notifications').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
+        const { data: ords } = await sb.from('orders').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
+        const { data: chs } = await sb.from('charges').select('*').eq('personal_number', String(personal)).order('created_at', { ascending: false }).limit(200);
+        const { data: ofs } = await sb.from('offers').select('*').eq('active', true).order('created_at', { ascending: false }).limit(50);
+        notifications = nots || []; orders = ords || []; charges = chs || []; offers = ofs || [];
+      } catch (e) { console.warn('notifications supabase fetch err', e); }
+    } else {
+      notifications = (DB.notifications || []).filter(n => String(n.personal) === String(personal));
+      orders = (DB.orders || []).filter(o => String(o.personalNumber || o.personal) === String(personal));
+      charges = (DB.charges || []).filter(c => String(c.personalNumber || c.personal) === String(personal));
+      offers = (DB.offers || []).filter(o => !!o.active);
+    }
+
     return res.json({ ok: true, profile, notifications, orders, charges, offers });
   } catch (e) {
     console.error('notifications endpoint error', e);
@@ -595,29 +397,32 @@ app.get('/api/notifications/:personal', async (req, res) => {
   }
 });
 
-// Mark notifications read
+// mark-read / clear (simple)
 app.post('/api/notifications/mark-read', async (req, res) => {
   try {
-    const personal = getPersonalFromReq(req);
+    const { personal } = req.body || {};
     if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-    DB.notifications = (DB.notifications || []).map(n => (String(n.personal) === String(personal) ? Object.assign({}, n, { read: true }) : n));
-    if (Array.isArray(DB.orders)) DB.orders.forEach(o => { if (String(o.personalNumber) === String(personal) && o.replied) o.replied = false; });
-    if (Array.isArray(DB.charges)) DB.charges.forEach(c => { if (String(c.personalNumber) === String(personal) && c.replied) c.replied = false; });
-    saveData(DB);
+    if (useSupabase && sb) {
+      await sb.from('notifications').update({ read: true }).eq('personal_number', String(personal));
+    } else {
+      DB.notifications = (DB.notifications || []).map(n => (String(n.personal) === String(personal) ? { ...n, read: true } : n));
+      saveData(DB);
+    }
     return res.json({ ok: true });
   } catch (e) {
     console.error('mark-read error', e);
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });
-
-// Clear notifications
 app.post('/api/notifications/clear', async (req, res) => {
   try {
-    const personal = getPersonalFromReq(req);
+    const { personal } = req.body || {};
     if (!personal) return res.status(400).json({ ok: false, error: 'missing_personal' });
-    DB.notifications = (DB.notifications || []).filter(n => String(n.personal) !== String(personal));
-    saveData(DB);
+    if (useSupabase && sb) {
+      await sb.from('notifications').delete().eq('personal_number', String(personal));
+    } else {
+      DB.notifications = (DB.notifications || []).filter(n => String(n.personal) !== String(personal)); saveData(DB);
+    }
     return res.json({ ok: true });
   } catch (e) {
     console.error('clear notifications error', e);
@@ -625,42 +430,155 @@ app.post('/api/notifications/clear', async (req, res) => {
   }
 });
 
-// ----------------- Telegram webhook (robust) -----------------
+// --------------- Orders (deduct from balance server-side) ---------------
+app.post('/api/orders', async (req, res) => {
+  try {
+    const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount } = req.body || {};
+    if (!personal || !type || !item) return res.status(400).json({ ok: false, error: 'missing_fields' });
+
+    // ensure profile exists (create placeholder if needed) — but typical flow: register before ordering
+    let profile = await findProfileByPersonal(personal);
+    if (!profile) {
+      if (useSupabase) {
+        // create minimal profile
+        await sb.from('profiles').insert([{ personal_number: String(personal), name: 'ضيف', email: '', password: '', phone: phone || '', balance: 0, can_edit: false, last_login: new Date().toISOString() }]).catch(()=>{});
+        profile = await findProfileByPersonal(personal);
+      } else {
+        DB.profiles.push({ personalNumber: String(personal), name: 'ضيف', email: '', password: '', phone: phone || '', balance: 0, canEdit: false, lastLogin: new Date().toISOString() });
+        saveData(DB);
+        profile = await findProfileByPersonal(personal);
+      }
+    }
+
+    if (paidWithBalance) {
+      const price = Number(paidAmount || 0);
+      if (isNaN(price) || price <= 0) return res.status(400).json({ ok: false, error: 'invalid_paid_amount' });
+      if (useSupabase && sb) {
+        const { data: profRow } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+        const bal = profRow ? Number(profRow.balance || 0) : 0;
+        if (bal < price) return res.status(402).json({ ok: false, error: 'insufficient_balance' });
+        const newBal = bal - price;
+        await sb.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal));
+        // add notification
+        await sb.from('notifications').insert([{ personal_number: String(personal), text: `تم خصم ${price} من رصيدك لطلب: ${item}`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
+      } else {
+        const p = DB.profiles.find(x => String(x.personalNumber) === String(personal));
+        if (!p) return res.status(404).json({ ok: false, error: 'profile_not_found' });
+        if (Number(p.balance || 0) < price) return res.status(402).json({ ok: false, error: 'insufficient_balance' });
+        p.balance = Number(p.balance || 0) - price;
+        saveData(DB);
+      }
+    }
+
+    const orderId = Date.now();
+    const orderRecord = {
+      id: orderId,
+      personal_number: personal,
+      phone: phone || profile.phone || '',
+      type, item,
+      id_field: idField || '',
+      file_link: fileLink || '',
+      cash_method: cashMethod || '',
+      status: 'قيد المراجعة',
+      replied: false,
+      created_at: new Date().toISOString()
+    };
+
+    if (useSupabase && sb) {
+      await sb.from('orders').insert([orderRecord]).catch(e => console.warn('orders insert err', e));
+    } else {
+      DB.orders = DB.orders || [];
+      DB.orders.unshift({ id: orderId, personalNumber: personal, phone: orderRecord.phone, type, item, idField: idField || '', fileLink: fileLink || '', cashMethod: cashMethod || '', status: 'قيد المراجعة', replied: false, createdAt: orderRecord.created_at });
+      saveData(DB);
+    }
+
+    // notify admin (optional)
+    const adminText = `طلب جديد\nمعرف: ${orderId}\nالرقم الشخصي: ${personal}\nالبند: ${item}\nالطريقة: ${cashMethod || 'غير محددة'}`;
+    try { if (CFG.BOT_ORDER_TOKEN && CFG.BOT_ORDER_CHAT) await sendTelegramMessageToChat(CFG.BOT_ORDER_CHAT, adminText, CFG.BOT_ORDER_TOKEN); } catch(e){}
+
+    return res.json({ ok: true, order: orderRecord });
+  } catch (e) {
+    console.error('create order error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// --------------- Charge request (user requests top-up) ---------------
+app.post('/api/charge', async (req, res) => {
+  try {
+    const { personal, phone, amount, method, fileLink } = req.body || {};
+    if (!personal || !amount) return res.status(400).json({ ok: false, error: 'missing_fields' });
+    const chargeId = Date.now();
+    const charge = {
+      id: chargeId,
+      personal_number: String(personal),
+      phone: phone || '',
+      amount: Number(amount),
+      method: method || '',
+      file_link: fileLink || '',
+      status: 'قيد المراجعة',
+      replied: false,
+      created_at: new Date().toISOString()
+    };
+    if (useSupabase && sb) {
+      await sb.from('charges').insert([charge]).catch(e=>console.warn('charges insert err', e));
+    } else {
+      DB.charges = DB.charges || [];
+      DB.charges.unshift({ id: chargeId, personalNumber: String(personal), phone: charge.phone, amount: charge.amount, method: charge.method, fileLink: charge.file_link, status: charge.status, replied: false, createdAt: charge.created_at });
+      saveData(DB);
+    }
+    // notify admin
+    try { if (CFG.BOT_BALANCE_TOKEN && CFG.BOT_BALANCE_CHAT) await sendTelegramMessageToChat(CFG.BOT_BALANCE_CHAT, `طلب شحن جديد\nمعرف: ${chargeId}\nالرقم الشخصي: ${personal}\nالمبلغ: ${amount}`, CFG.BOT_BALANCE_TOKEN); } catch(e){}
+    return res.json({ ok: true, charge });
+  } catch (e) {
+    console.error('create charge error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// --------------- Telegram webhook: admin replies to accept charge or send amount ---------------
 app.post('/api/telegram/webhook', async (req, res) => {
   try {
     const update = req.body || {};
     const msg = update.message || update.edited_message;
     if (!msg) return res.sendStatus(200);
 
-    // Optional: restrict to configured chat (recommended in production)
+    // optional restriction: only allow a specific admin chat id (set CFG.BOT_BALANCE_CHAT)
     const adminChatId = CFG.BOT_BALANCE_CHAT || '';
     if (adminChatId && String(msg.chat && msg.chat.id) !== String(adminChatId)) {
-      console.log('Webhook: ignored message from chat', msg.chat && msg.chat.id);
+      console.log('Webhook ignored from chat', msg.chat && msg.chat.id);
       return res.sendStatus(200);
     }
 
-    // 1) Reply-to with "معرف ..." => confirm by id
     const repliedTo = msg.reply_to_message;
+    // Case A: reply-to contains "معرف ..." -> confirm by id
     if (repliedTo && repliedTo.text) {
-      const reId = /(?:معرف\s*(?:الطلب|الشحنة|ال)?\s*[:\-]?\s*)(\d+)/i;
+      const reId = /(?:معرف\s*(?:الطلب|الشحنة|ال)?\s*[:\-]?\s*)(\d{3,})/i;
       const mid = (repliedTo.text || '').match(reId);
       if (mid) {
         const id = mid[1];
-        try {
-          const r = await confirmChargeById(id);
-          console.log('Webhook: confirmChargeById', id, r);
-        } catch (e) { console.warn('Webhook confirm by id error', e); }
-        try { await sendTelegramMessageToChat(msg.chat.id, `تم معالجة الطلب بالمعرف ${id}`); } catch (e) {}
+        const result = await confirmChargeById(id);
+        console.log('Webhook: confirmed by id', id, result);
+        // reply back to admin (optional)
+        try { await sendTelegramMessageToChat(msg.chat.id, result.ok ? `تم اعتماد الشحنة #${id}` : `لم أتمكن من اعتماد #${id}: ${result.error || 'خطأ'}`); } catch (e) {}
         return res.sendStatus(200);
       }
     }
 
-    // 2) Direct message: "الرصيد: <amount>\nالرقم الشخصي: <personal>"
+    // Case B: admin writes amount & personal in the text
+    // Example: "الرصيد: 10,000\nالرقم الشخصي: 9682390"
     const txt = (msg.text || '').replace(/\u00A0/g, ' ');
     const reAmount = /الرصيد\s*[:\-]?\s*([0-9\.,]+)/i;
-    const rePersonal = /الرقم\s*الشخصي\s*[:\-]?\s*(\d+)/i;
-    const mAmount = txt.match(reAmount);
-    const mPersonal = txt.match(rePersonal);
+    const rePersonal = /الرقم\s*الشخصي\s*[:\-]?\s*(\d{3,})/i;
+    let mAmount = txt.match(reAmount);
+    let mPersonal = txt.match(rePersonal);
+
+    // try extracting from replied-to text if not found
+    if ((!mAmount || !mPersonal) && repliedTo && repliedTo.text) {
+      const rt = repliedTo.text.replace(/\u00A0/g, ' ');
+      if (!mAmount) mAmount = rt.match(reAmount);
+      if (!mPersonal) mPersonal = rt.match(rePersonal);
+    }
 
     if (mAmount && mPersonal) {
       let amountRaw = mAmount[1].replace(/\s+/g, '').replace(/,/g, '').replace(/\./g, '');
@@ -668,42 +586,30 @@ app.post('/api/telegram/webhook', async (req, res) => {
       const personal = String(mPersonal[1]);
 
       if (isNaN(amount) || amount <= 0) {
-        await sendTelegramMessageToChat(msg.chat.id, `خطأ: قيمة الرصيد غير صالحة: ${mAmount[1]}`);
+        await sendTelegramMessageToChat(msg.chat.id, `خطأ: قيمة الرصيد غير صالحة (${mAmount[1]})`);
         return res.sendStatus(200);
       }
 
-      // Add balance
+      // 1) add balance in DB
       const addRes = await addBalanceToPersonal(personal, amount);
       if (!addRes.ok) {
         await sendTelegramMessageToChat(msg.chat.id, `خطأ عند تحديث الرصيد: ${addRes.error || 'unknown'}`);
         return res.sendStatus(200);
       }
 
-      // Mark pending charge if exists
-      const markRes = await markLatestPendingChargeAsAccepted(personal, amount);
+      // 2) mark pending charge (if any)
+      const markRes = await markLatestPendingChargeAsAccepted(personal, amount).catch(()=>({ ok:false }));
 
-      // Add internal notification
-      try {
-        DB.notifications = DB.notifications || [];
-        DB.notifications.unshift({
-          id: String(Date.now()),
-          personal: String(personal),
-          text: `تمت إضافة مبلغ ${Number(amount).toLocaleString()} إلى رصيدك. الرصيد الجديد: ${addRes.newBalance}`,
-          read: false,
-          createdAt: new Date().toISOString()
-        });
-        saveData(DB);
-      } catch (e) { console.warn('add notification failed', e); }
-
-      // Notify admin back (feedback)
-      try {
-        await sendTelegramMessageToChat(msg.chat.id, `تمت إضافة ${amount.toLocaleString()} لرقم ${personal}. الرصيد الجديد: ${addRes.newBalance}. ${markRes.ok ? 'وُسمت الشحنة كمقبولة.' : 'لم يكن هناك شحنة معلقة.'}`);
-      } catch (e) { /* ignore */ }
+      // 3) ensure a notification exists (addBalance already adds notification in supabase/local)
+      // 4) reply to admin with summary
+      const replyMsg = `تمت إضافة ${amount.toLocaleString()} لرقم ${personal}. الرصيد الجديد: ${addRes.newBalance}. ${markRes.ok ? 'وُسمت شحنة كمقبولة.' : 'لا توجد شحنة معلقة.'}`;
+      try { await sendTelegramMessageToChat(msg.chat.id, replyMsg); } catch (e) {}
 
       return res.sendStatus(200);
     }
 
     // nothing matched
+    try { await sendTelegramMessageToChat(msg.chat.id, 'تعذّر قراءة البيانات. مثال صالح:\nالرصيد: 10000\nالرقم الشخصي: 123456789'); } catch (e) {}
     return res.sendStatus(200);
   } catch (e) {
     console.error('telegram webhook enhanced error', e);
@@ -711,13 +617,41 @@ app.post('/api/telegram/webhook', async (req, res) => {
   }
 });
 
-// ----------------- Start server -----------------
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+// --------------- Confirm charge/order endpoints (admin) ---------------
+app.post('/api/admin/confirm-charge', async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    if (!id) return res.status(400).json({ ok: false, error: 'missing_id' });
+    const r = await confirmChargeById(id);
+    if (!r.ok) return res.status(400).json(r);
+    return res.json(r);
+  } catch (e) { console.error('admin confirm-charge err', e); return res.status(500).json({ ok:false, error: String(e) }); }
 });
 
-// Save DB on exit
-process.on('SIGINT', () => {
-  try { saveData(DB); console.log('Saved DB before exit'); } catch (e) {}
-  process.exit();
+app.post('/api/admin/confirm-order', async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    if (!id) return res.status(400).json({ ok: false, error: 'missing_id' });
+    // minimal: mark local/supabase order as processed and notify user
+    if (useSupabase && sb) {
+      await sb.from('orders').update({ status: 'تمت المعالجة', replied: true }).eq('id', id);
+      const { data: ord } = await sb.from('orders').select('*').eq('id', id).limit(1).maybeSingle();
+      if (ord) await sb.from('notifications').insert([{ personal_number: ord.personal_number, text: `طلبك #${id} تمّت معالجته.`, read: false, created_at: new Date().toISOString() }]).catch(()=>{});
+      return res.json({ ok: true });
+    } else {
+      const o = (DB.orders || []).find(x => String(x.id) === String(id));
+      if (!o) return res.status(404).json({ ok: false, error: 'order_not_found' });
+      o.status = 'تمت المعالجة'; o.replied = true; saveData(DB);
+      DB.notifications = DB.notifications || [];
+      DB.notifications.unshift({ id: String(Date.now()), personal: o.personalNumber, text: `طلبك #${id} تمّت معالجته.`, read: false, createdAt: new Date().toISOString() });
+      return res.json({ ok: true });
+    }
+  } catch (e) { console.error('confirm order err', e); return res.status(500).json({ ok:false, error: String(e) }); }
 });
+
+// --------------- Simple health ----------------
+app.get('/api/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString(), supabase: useSupabase }));
+
+// --------------- Start ----------------
+app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+process.on('SIGINT', () => { try { saveData(DB); console.log('Saved DB before exit'); } catch (e) {} process.exit(); });
