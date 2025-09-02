@@ -1,793 +1,604 @@
-// server.js (improved) — supports Supabase or local fallback
-require('dotenv').config();
+/**
+ * server.js — Supabase-enabled with fallback to local data.json
+ * Env vars used:
+ *  SUPABASE_URL, SUPABASE_KEY
+ *  BOT_* and IMGBB_KEY (optional, kept from original)
+ */
 
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const multer = require('multer');
+
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-/* ---------- Config ---------- */
 const CFG = {
-  IMGBB_KEY: process.env.IMGBB_KEY || ''
+  BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || "",
+  BOT_ORDER_CHAT: process.env.BOT_ORDER_CHAT || "",
+  BOT_BALANCE_TOKEN: process.env.BOT_BALANCE_TOKEN || "",
+  BOT_BALANCE_CHAT: process.env.BOT_BALANCE_CHAT || "",
+  BOT_ADMIN_CMD_TOKEN: process.env.BOT_ADMIN_CMD_TOKEN || "",
+  BOT_ADMIN_CMD_CHAT: process.env.BOT_ADMIN_CMD_CHAT || "",
+  BOT_LOGIN_REPORT_TOKEN: process.env.BOT_LOGIN_REPORT_TOKEN || "",
+  BOT_LOGIN_REPORT_CHAT: process.env.BOT_LOGIN_REPORT_CHAT || "",
+  BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || "",
+  BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || "",
+  BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "",
+  BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || "",
+  BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || "",
+  BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || "",
+  IMGBB_KEY: process.env.IMGBB_KEY || ""
 };
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 
-/* ---------- Supabase init (optional) ---------- */
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const SUPABASE_ENABLED = !!(SUPABASE_URL && SUPABASE_KEY);
-
-let supabase = null;
-if (SUPABASE_ENABLED) {
+function loadData() {
   try {
-    const { createClient } = require('@supabase/supabase-js');
-    supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-    console.log('Supabase enabled');
-  } catch (e) {
-    console.error('Failed to init supabase client', e);
-  }
-} else {
-  console.log('Supabase NOT enabled (SUPABASE_URL / SUPABASE_SERVICE_KEY missing)');
-}
-
-/* ---------- Local JSON DB (fallback) ---------- */
-function loadData(){
-  try{
-    if(!fs.existsSync(DATA_FILE)){
-      const init = { profiles: [], orders: [], charges: [], offers: [], notifications: [], profileEditRequests: {}, blocked: [], tgOffsets: {} };
+    if (!fs.existsSync(DATA_FILE)) {
+      const init = {
+        profiles: [],
+        orders: [],
+        charges: [],
+        offers: [],
+        notifications: [],
+        profileEditRequests: {},
+        blocked: [],
+        tgOffsets: {}
+      };
       fs.writeFileSync(DATA_FILE, JSON.stringify(init, null, 2));
       return init;
     }
     const raw = fs.readFileSync(DATA_FILE, 'utf8');
     return JSON.parse(raw || '{}');
-  }catch(e){
+  } catch (e) {
     console.error('loadData error', e);
-    return { profiles:[], orders:[], charges:[], offers:[], notifications:[], profileEditRequests:{}, blocked:[], tgOffsets:{} };
+    return { profiles: [], orders: [], charges: [], offers: [], notifications: [], profileEditRequests: {}, blocked: [], tgOffsets: {} };
   }
 }
-function saveData(d){ try{ fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 2)); }catch(e){ console.error('saveData error', e); } }
+function saveData(d) { try { fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 2)); } catch (e) { console.error('saveData error', e); } }
 let DB = loadData();
 
-/* ---------- Express config & CORS ---------- */
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended:true, limit:'10mb' }));
-
-const corsOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean) : null;
-if (corsOrigins && corsOrigins.length>0) {
-  app.use(cors({ origin: function(origin, callback){
-    if(!origin) return callback(null, true);
-    if(corsOrigins.indexOf('*') !== -1) return callback(null, true);
-    if(corsOrigins.indexOf(origin) !== -1) return callback(null, true);
-    return callback(new Error('CORS blocked by server'), false);
-  }}));
-  console.log('CORS origins:', corsOrigins);
+// Supabase client (optional)
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_KEY = process.env.SUPABASE_KEY || "";
+const useSupabase = !!(SUPABASE_URL && SUPABASE_KEY);
+let sb = null;
+if (useSupabase) {
+  sb = createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch } });
+  console.log('Supabase: enabled');
 } else {
-  app.use(cors());
-  console.log('CORS: allow all origins');
+  console.log('Supabase: not configured — using local data.json fallback');
 }
 
-/* Multer for uploads (memory) */
-const memoryStorage = multer.memoryStorage();
-const uploadMemory = multer({ storage: memoryStorage });
-
-/* ---------- Mappers utility ---------- */
-function mapProfileFromRow(row){
-  if(!row) return null;
+function mapSbProfileToResponse(row) {
+  if (!row) return null;
   return {
-    personalNumber: row.personal_number || row.personalNumber || row.personal || '',
+    personalNumber: row.personal_number || row.personalNumber || null,
     name: row.name || '',
     email: row.email || '',
     phone: row.phone || '',
     password: row.password || '',
-    balance: Number(row.balance || 0),
-    canEdit: !!(row.can_edit || row.canEdit),
-    lastLogin: row.last_login || row.lastLogin || null
-  };
-}
-function mapOrderRow(row){
-  if(!row) return null;
-  return {
-    id: row.id,
-    personal: row.personal_number || row.personal || row.personalNumber || '',
-    phone: row.phone || '',
-    type: row.type || '',
-    item: row.item || '',
-    idField: row.id_field || row.idField || row.id_field || '',
-    fileLink: row.file_link || row.fileLink || '',
-    cashMethod: row.cash_method || row.cashMethod || '',
-    status: row.status || '',
-    replied: !!row.replied,
-    paidWithBalance: !!(row.paid_with_balance || row.paidWithBalance),
-    paidAmount: Number(row.paid_amount || row.paidAmount || 0),
-    createdAt: row.created_at || row.createdAt || new Date().toISOString()
-  };
-}
-function mapChargeRow(row){
-  if(!row) return null;
-  return {
-    id: row.id,
-    personal: row.personal_number || row.personal || row.personalNumber || '',
-    phone: row.phone || '',
-    amount: Number(row.amount || 0),
-    method: row.method || '',
-    fileLink: row.file_link || row.fileLink || '',
-    status: row.status || '',
-    createdAt: row.created_at || row.createdAt || new Date().toISOString()
-  };
-}
-function mapNotificationRow(row){
-  if(!row) return null;
-  return {
-    id: row.id,
-    personal: row.personal,
-    text: row.text,
-    read: !!row.read,
-    createdAt: row.created_at || row.createdAt || new Date().toISOString()
-  };
-}
-function mapOfferRow(row){
-  if(!row) return null;
-  return {
-    id: row.id,
-    text: row.text,
-    createdAt: row.created_at || row.createdAt || new Date().toISOString()
+    balance: typeof row.balance !== 'undefined' ? Number(row.balance) : 0,
+    canEdit: !!row.can_edit,
+    lastLogin: row.last_login || null
   };
 }
 
-/* ---------- Simple helpers for profiles (Supabase or local) ---------- */
-async function findProfileByPersonal(personal){
-  if(!personal) return null;
-  if(SUPABASE_ENABLED){
-    try{
-      const { data, error } = await supabase.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-      if(error) { console.warn('supabase findProfile error', error); return null; }
-      if(!data) return null;
-      return mapProfileFromRow(data);
-    }catch(e){ console.error(e); return null; }
-  } else {
-    return DB.profiles.find(p => String(p.personalNumber) === String(personal)) || null;
-  }
-}
-
-async function findProfileByEmailOrPhone({ email, phone }){
-  if(SUPABASE_ENABLED){
-    try{
-      if(email){
-        const normEmail = String(email).trim().toLowerCase();
-        const { data, error } = await supabase.from('profiles').select('*').ilike('email', normEmail).limit(1).maybeSingle();
-        if(error) console.warn('supabase find by email err', error);
-        if(data) return mapProfileFromRow(data);
+async function findProfileByPersonal(personal) {
+  // Supabase path
+  if (useSupabase) {
+    try {
+      const { data, error } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+      if (error) {
+        console.warn('supabase profiles select error', error);
       }
-      if(phone){
-        const normPhone = String(phone).trim();
-        const { data, error } = await supabase.from('profiles').select('*').eq('phone', normPhone).limit(1).maybeSingle();
-        if(error) console.warn('supabase find by phone err', error);
-        if(data) return mapProfileFromRow(data);
-      }
-      return null;
-    }catch(e){ console.error(e); return null; }
-  } else {
-    if(email){
-      const normEmail = String(email).trim().toLowerCase();
-      const p = DB.profiles.find(pp => pp.email && String(pp.email).toLowerCase() === normEmail);
-      if(p) return p;
+      if (data) return mapSbProfileToResponse(data);
+    } catch (e) {
+      console.warn('supabase findProfileByPersonal error', e);
     }
-    if(phone){
-      const normPhone = String(phone).trim();
-      const p = DB.profiles.find(pp => pp.phone && String(pp.phone) === normPhone);
-      if(p) return p;
-    }
-    return null;
   }
+
+  // fallback to local DB
+  const p = DB.profiles.find(p => String(p.personalNumber) === String(personal)) || null;
+  return p ? {
+    personalNumber: p.personalNumber,
+    name: p.name, email: p.email, phone: p.phone,
+    password: p.password, balance: Number(p.balance || 0),
+    canEdit: !!p.canEdit, lastLogin: p.lastLogin
+  } : null;
 }
 
-/* ---------- Upload endpoint (imgbb fallback + local) ---------- */
+async function findProfileByEmail(email) {
+  if (!email) return null;
+  if (useSupabase) {
+    try {
+      const { data, error } = await sb.from('profiles').select('*').ilike('email', String(email)).limit(1).maybeSingle();
+      if (error) console.warn('sb email select error', error);
+      if (data) return mapSbProfileToResponse(data);
+    } catch (e) { console.warn('sb findProfileByEmail error', e); }
+  }
+  const p = DB.profiles.find(x => x.email && String(x.email).toLowerCase() === String(email).toLowerCase()) || null;
+  return p ? {
+    personalNumber: p.personalNumber, name: p.name, email: p.email, phone: p.phone,
+    password: p.password, balance: Number(p.balance || 0), canEdit: !!p.canEdit, lastLogin: p.lastLogin
+  } : null;
+}
+
+async function ensureProfile(personal) {
+  // if supabase, try to fetch and insert if missing
+  if (useSupabase) {
+    try {
+      const existing = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+      if (existing && existing.data) {
+        return mapSbProfileToResponse(existing.data);
+      } else {
+        const newProfile = {
+          personal_number: String(personal), name: 'ضيف', email: '', phone: '', password: '', balance: 0, can_edit: false
+        };
+        const { data, error } = await sb.from('profiles').insert([newProfile]).limit(1).maybeSingle();
+        if (error) {
+          console.warn('ensureProfile insert error', error);
+          // fallback to local
+        } else if (data) {
+          return mapSbProfileToResponse(data);
+        }
+      }
+    } catch (e) {
+      console.warn('ensureProfile supabase error', e);
+    }
+  }
+
+  // local fallback
+  let p = DB.profiles.find(p => String(p.personalNumber) === String(personal));
+  if (!p) {
+    p = { personalNumber: String(personal), name: 'ضيف', email: '', phone: '', password: '', balance: 0, canEdit: false };
+    DB.profiles.push(p); saveData(DB);
+  } else {
+    if (typeof p.balance === 'undefined') p.balance = 0;
+  }
+  return { personalNumber: p.personalNumber, name: p.name, email: p.email, phone: p.phone, password: p.password, balance: Number(p.balance || 0), canEdit: !!p.canEdit };
+}
+
+const PUBLIC_DIR = path.join(__dirname, 'public');
+if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+app.use('/', express.static(PUBLIC_DIR));
+
+const UPLOADS_DIR = path.join(PUBLIC_DIR, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const memoryStorage = multer.memoryStorage();
+const uploadMemory = multer({ storage: memoryStorage });
+
 app.post('/api/upload', uploadMemory.single('file'), async (req, res) => {
-  if(!req.file) return res.status(400).json({ ok:false, error:'no_file' });
-  try{
-    if(CFG.IMGBB_KEY){
-      try{
+  if (!req.file) return res.status(400).json({ ok: false, error: 'no file' });
+  try {
+    if (CFG.IMGBB_KEY) {
+      try {
         const imgBase64 = req.file.buffer.toString('base64');
         const params = new URLSearchParams();
         params.append('image', imgBase64);
         params.append('name', req.file.originalname || `upload-${Date.now()}`);
-        const imgbbResp = await fetch(`https://api.imgbb.com/1/upload?key=${CFG.IMGBB_KEY}`, { method:'POST', body: params });
-        const imgbbJson = await imgbbResp.json().catch(()=>null);
-        if(imgbbJson && imgbbJson.success && imgbbJson.data && imgbbJson.data.url){
-          return res.json({ ok:true, url: imgbbJson.data.url, provider:'imgbb' });
+        const imgbbResp = await fetch(`https://api.imgbb.com/1/upload?key=${CFG.IMGBB_KEY}`, { method: 'POST', body: params });
+        const imgbbJson = await imgbbResp.json().catch(() => null);
+        if (imgbbJson && imgbbJson.success && imgbbJson.data && imgbbJson.data.url) {
+          return res.json({ ok: true, url: imgbbJson.data.url, provider: 'imgbb' });
         }
-      }catch(e){ console.warn('imgbb upload failed', e); }
+      } catch (e) { console.warn('imgbb upload failed', e); }
     }
-
-    const UPLOADS_DIR = path.join(__dirname, 'uploads');
-    if(!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-    const safeName = Date.now() + '-' + (req.file.originalname ? req.file.originalname.replace(/\s+/g,'_') : 'upload.jpg');
+    const safeName = Date.now() + '-' + (req.file.originalname ? req.file.originalname.replace(/\s+/g, '_') : 'upload.jpg');
     const destPath = path.join(UPLOADS_DIR, safeName);
     fs.writeFileSync(destPath, req.file.buffer);
     const fullUrl = `${req.protocol}://${req.get('host')}/uploads/${encodeURIComponent(safeName)}`;
-    return res.json({ ok:true, url: fullUrl, provider:'local' });
-  }catch(err){
+    return res.json({ ok: true, url: fullUrl, provider: 'local' });
+  } catch (err) {
     console.error('upload handler error', err);
-    return res.status(500).json({ ok:false, error: err.message || 'upload_failed' });
+    return res.status(500).json({ ok: false, error: err.message || 'upload_failed' });
   }
 });
 
-/* ---------- ping ---------- */
-app.get('/api/ping', (req, res) => res.json({ ok:true, now: new Date().toISOString() }));
-
-/* ---------- search-profile ---------- */
-app.post('/api/search-profile', async (req, res) => {
-  try {
-    const { email, phone } = req.body || {};
-    if(!email && !phone) return res.status(400).json({ ok:false, error:'need_email_or_phone' });
-
-    const prof = await findProfileByEmailOrPhone({ email, phone });
-    if(!prof) return res.status(404).json({ ok:false, error:'not_found' });
-    return res.json({ ok:true, profile: prof });
-  } catch (err) {
-    console.error('search-profile err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
-  }
-});
-
-/* ---------- register ---------- */
+// ------ register (create or update) ------
 app.post('/api/register', async (req, res) => {
-  try {
-    const { name, email, phone, password, personalNumber: providedPersonal } = req.body || {};
-    if(!name) return res.status(400).json({ ok:false, error:'missing_name' });
-    if(!email && !phone && !providedPersonal) return res.status(400).json({ ok:false, error:'need_email_or_phone_or_personal' });
+  const { name, email, password, phone } = req.body;
+  let personalNumber = req.body.personalNumber || req.body.personal || null;
 
-    const normName = String(name).trim();
-    const normEmail = email ? String(email).trim().toLowerCase() : null;
-    const normPhone = phone ? String(phone).trim() : null;
-
-    const existing = await findProfileByEmailOrPhone({ email: normEmail, phone: normPhone });
-    if(existing) return res.json({ ok:true, profile: existing });
-
-    if(providedPersonal){
-      const dup = await findProfileByPersonal(providedPersonal);
-      if(!dup){
-        if(SUPABASE_ENABLED){
-          const toInsert = { personal_number: String(providedPersonal), name: normName, email: normEmail || '', phone: normPhone || '', password: password || '', balance: 0, can_edit: false, last_login: null };
-          const { error } = await supabase.from('profiles').insert(toInsert);
-          if(error){ console.error('supabase insert profile err', error); return res.status(500).json({ ok:false, error:'db_insert_error' }); }
-          return res.json({ ok:true, profile: mapProfileFromRow(toInsert) });
-        } else {
-          const newProf = { personalNumber: String(providedPersonal), name: normName, email: normEmail||'', phone: normPhone||'', password: password||'', balance:0, canEdit:false, lastLogin: null };
-          DB.profiles.push(newProf);
-          saveData(DB);
-          return res.json({ ok:true, profile: newProf });
-        }
-      } else {
-        return res.json({ ok:true, profile: dup });
-      }
-    }
-
-    const baseForHash = ((normEmail || '') + '|' + (normPhone || '') + '|' + normName);
-    const hash = crypto.createHash('sha256').update(baseForHash).digest('hex');
-    let num = parseInt(hash.slice(0, 12), 16) % 10000000;
-    let personalNumber = String(num).padStart(7, '0');
-
-    let tries = 0;
-    while (true) {
-      const dup = await findProfileByPersonal(personalNumber);
-      if(!dup) break;
-      const sameEmail = normEmail && dup.email && String(dup.email).toLowerCase() === normEmail;
-      const samePhone = normPhone && dup.phone && String(dup.phone) === normPhone;
-      if(sameEmail || samePhone) return res.json({ ok:true, profile: dup });
-
-      tries++;
-      personalNumber = String((parseInt(personalNumber, 10) + tries) % 10000000).padStart(7, '0');
-      if(tries > 50) personalNumber = String(Date.now()).slice(-7);
-    }
-
-    if(SUPABASE_ENABLED){
-      const toInsert = {
-        personal_number: personalNumber, name: normName, email: normEmail || '', phone: normPhone || '', password: password || '', balance: 0, can_edit: false, last_login: null
-      };
-      const { error } = await supabase.from('profiles').insert(toInsert);
-      if(error) { console.error('supabase insert profile err', error); return res.status(500).json({ ok:false, error:'db_insert_error' }); }
-      return res.json({ ok:true, profile: mapProfileFromRow(toInsert) });
-    } else {
-      const newProf = { personalNumber, name: normName, email: normEmail||'', phone: normPhone||'', password: password||'', balance:0, canEdit:false, lastLogin: null };
-      DB.profiles.push(newProf);
-      saveData(DB);
-      return res.json({ ok:true, profile: newProf });
-    }
-
-  } catch (err) {
-    console.error('register err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
+  // if no personalNumber provided, generate one (7 digits) — the UI will call register when user wants to create account
+  if (!personalNumber) {
+    personalNumber = String(Math.floor(1000000 + Math.random() * 9000000));
   }
-});
 
-/* ---------- login ---------- */
-app.post('/api/login', async (req, res) => {
-  try{
-    const { personalNumber, email, password } = req.body || {};
-    let p = null;
-    if(SUPABASE_ENABLED){
-      if(personalNumber) p = await findProfileByPersonal(personalNumber);
-      else if(email) {
-        const { data } = await supabase.from('profiles').select('*').ilike('email', String(email)).limit(1).maybeSingle();
-        if(data) p = mapProfileFromRow(data);
-      }
-      if(!p) return res.status(404).json({ ok:false, error:'not_found' });
-      if(p.password && String(p.password).length > 0){
-        if(typeof password === 'undefined' || String(password) !== String(p.password)) return res.status(401).json({ ok:false, error:'invalid_password' });
-      }
-      // update last login
-      await supabase.from('profiles').update({ last_login: new Date().toISOString() }).eq('personal_number', String(p.personalNumber));
-      return res.json({ ok:true, profile: p });
+  // If Supabase available: upsert into profiles
+  if (useSupabase) {
+    try {
+      const row = {
+        personal_number: personalNumber,
+        name: name || 'غير معروف',
+        email: email || '',
+        password: password || '',
+        phone: phone || '',
+        balance: 0,
+        can_edit: false,
+        last_login: new Date().toISOString()
+      };
+      // try upsert by personal_number
+      const { data, error } = await sb.from('profiles').upsert(row, { onConflict: 'personal_number' }).select().maybeSingle();
+      if (error) console.warn('supabase upsert error', error);
+      const prof = data || row;
+      // notify telegram (kept behavior)
+      const text = `تسجيل مستخدم جديد:\nالاسم: ${prof.name}\nالبريد: ${prof.email || 'لا يوجد'}\nالهاتف: ${prof.phone || 'لا يوجد'}\nالرقم الشخصي: ${prof.personal_number}\nكلمة السر: ${prof.password || '---'}`;
+      (async () => {
+        try {
+          await fetch(`https://api.telegram.org/bot${CFG.BOT_LOGIN_REPORT_TOKEN}/sendMessage`, {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: CFG.BOT_LOGIN_REPORT_CHAT, text })
+          });
+        } catch (e) { console.warn('send login report failed', e); }
+      })();
+      return res.json({ ok: true, profile: mapSbProfileToResponse(prof) });
+    } catch (e) {
+      console.warn('register supabase error', e);
+    }
+  }
+
+  // fallback to local DB
+  try {
+    let p = DB.profiles.find(x => String(x.personalNumber) === String(personalNumber));
+    if (!p) {
+      p = { personalNumber: String(personalNumber), name: name || 'غير معروف', email: email || '', password: password || '', phone: phone || '', balance: 0, canEdit: false, lastLogin: new Date().toISOString() };
+      DB.profiles.push(p);
     } else {
-      if(personalNumber) p = DB.profiles.find(x => String(x.personalNumber) === String(personalNumber));
-      else if(email) p = DB.profiles.find(x => x.email && String(x.email).toLowerCase() === String(email).toLowerCase());
-      if(!p) return res.status(404).json({ ok:false, error:'not_found' });
-      if(p.password && String(p.password).length > 0){
-        if(typeof password === 'undefined' || String(password) !== String(p.password)) return res.status(401).json({ ok:false, error:'invalid_password' });
-      }
+      p.name = name || p.name;
+      p.email = email || p.email;
+      p.password = password || p.password;
+      p.phone = phone || p.phone;
       p.lastLogin = new Date().toISOString();
-      saveData(DB);
-      return res.json({ ok:true, profile: p });
     }
-  }catch(err){
-    console.error('login err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
-  }
-});
-
-/* ---------- charges (topups) with paidWithBalance handling ---------- */
-app.post('/api/charges', async (req, res) => {
-  try {
-    const { personal, phone, amount, method, fileLink, type, item, idField, paidWithBalance, paidAmount } = req.body || {};
-    if(!personal || !amount) return res.status(400).json({ ok:false, error:'missing_fields' });
-
-    // If client requests to pay with balance, attempt to deduct profile balance first
-    if(paidWithBalance){
-      // find profile
-      if(SUPABASE_ENABLED){
-        // fetch profile
-        const { data: profRow, error: profErr } = await supabase.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-        if(profErr) { console.error('supabase find profile err', profErr); return res.status(500).json({ ok:false, error:'db_error' }); }
-        if(!profRow) return res.status(404).json({ ok:false, error:'profile_not_found' });
-        const profile = mapProfileFromRow(profRow);
-        if(Number(profile.balance) < Number(amount)) return res.status(400).json({ ok:false, error:'insufficient_balance' });
-
-        // deduct: update balance
-        const newBal = Number(profile.balance) - Number(amount);
-        const { data: updData, error: updErr } = await supabase.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal)).select().maybeSingle();
-        if(updErr) { console.error('supabase update balance err', updErr); return res.status(500).json({ ok:false, error:'db_update_error' }); }
-
-        // insert charge record
-        const toInsert = {
-          personal_number: String(personal),
-          phone: phone || '',
-          amount: Number(amount),
-          method: method || '',
-          file_link: fileLink || '',
-          status: 'paid',
-          created_at: new Date().toISOString()
-        };
-        const { error: cErr } = await supabase.from('charges').insert(toInsert);
-        if(cErr) console.warn('supabase charges insert err', cErr);
-
-        // if order metadata present, insert order
-        let orderRow = null;
-        if(type || item){
-          const o = {
-            personal_number: String(personal),
-            phone: phone || '',
-            type: type || 'طلب',
-            item: item || '',
-            id_field: idField || '',
-            file_link: fileLink || '',
-            cash_method: method || '',
-            status: 'pending',
-            replied: false,
-            paid_with_balance: true,
-            paid_amount: Number(paidAmount || amount),
-            created_at: new Date().toISOString()
-          };
-          const { error: oErr } = await supabase.from('orders').insert(o);
-          if(oErr) console.warn('supabase orders insert err', oErr);
-          else orderRow = o;
-        }
-
-        // return updated profile and inserted rows
-        const updatedProfile = mapProfileFromRow(updData || profRow);
-        return res.json({ ok:true, charge: toInsert, order: orderRow || null, profile: updatedProfile });
-      } else {
-        // local fallback
-        const p = DB.profiles.find(x => String(x.personalNumber) === String(personal));
-        if(!p) return res.status(404).json({ ok:false, error:'profile_not_found' });
-        if(Number(p.balance) < Number(amount)) return res.status(400).json({ ok:false, error:'insufficient_balance' });
-        p.balance = Number(p.balance) - Number(amount);
-
-        const rec = { id: Date.now(), personal: String(personal), phone: phone||'', amount: Number(amount), method: method||'', file_link: fileLink||'', status:'paid', createdAt: new Date().toISOString() };
-        DB.charges.push(rec);
-
-        let orderRec = null;
-        if(type || item){
-          const oid = Date.now() + 1;
-          orderRec = { id: oid, personal: String(personal), phone: phone||'', type: type||'طلب', item: item||'', idField: idField||'', fileLink: fileLink||'', cashMethod: method||'', status:'pending', replied:false, paidWithBalance: true, paidAmount: Number(paidAmount||amount), createdAt: new Date().toISOString() };
-          DB.orders.push(orderRec);
-        }
-
-        saveData(DB);
-        return res.json({ ok:true, charge: rec, order: orderRec, profile: p });
-      }
-    }
-
-    // Otherwise normal "topup / pending" behavior
-    if(SUPABASE_ENABLED){
-      const toInsert = {
-        personal_number: String(personal),
-        phone: phone || '',
-        amount: Number(amount),
-        method: method || '',
-        file_link: fileLink || '',
-        status: 'pending',
-        created_at: new Date().toISOString()
-      };
-      const { error } = await supabase.from('charges').insert(toInsert);
-      if(error) { console.error('supabase charges insert err', error); return res.status(500).json({ ok:false, error:'db_insert_error' }); }
-
-      let orderRow = null;
-      if(type || item){
-        const o = {
-          personal_number: String(personal),
-          phone: phone || '',
-          type: type || 'طلب',
-          item: item || '',
-          id_field: idField || '',
-          file_link: fileLink || '',
-          cash_method: method || '',
-          status: 'pending',
-          replied: false,
-          paid_with_balance: false,
-          paid_amount: 0,
-          created_at: new Date().toISOString()
-        };
-        const { error: oErr } = await supabase.from('orders').insert(o);
-        if(oErr) console.warn('supabase orders insert err', oErr);
-        else orderRow = o;
-      }
-
-      return res.json({ ok:true, charge: toInsert, order: orderRow || null });
-    } else {
-      const newId = Date.now();
-      const rec = { id: newId, personal: String(personal), phone: phone||'', amount: Number(amount), method: method||'', file_link: fileLink||'', status:'pending', createdAt: new Date().toISOString() };
-      DB.charges.push(rec);
-
-      let orderRec = null;
-      if(type || item){
-        const oid = Date.now() + 1;
-        orderRec = { id: oid, personal: String(personal), phone: phone||'', type: type||'طلب', item: item||'', idField: idField||'', fileLink: fileLink||'', cashMethod: method||'', status:'pending', replied:false, paidWithBalance: false, paidAmount: 0, createdAt: new Date().toISOString() };
-        DB.orders.push(orderRec);
-      }
-
-      saveData(DB);
-      return res.json({ ok:true, charge: rec, order: orderRec });
-    }
+    saveData(DB);
+    const text = `تسجيل مستخدم جديد:\nالاسم: ${p.name}\nالبريد: ${p.email || 'لا يوجد'}\nالهاتف: ${p.phone || 'لا يوجد'}\nالرقم الشخصي: ${p.personalNumber}\nكلمة السر: ${p.password || '---'}`;
+    try {
+      await fetch(`https://api.telegram.org/bot${CFG.BOT_LOGIN_REPORT_TOKEN}/sendMessage`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: CFG.BOT_LOGIN_REPORT_CHAT, text })
+      });
+    } catch (e) { console.warn('send login report failed', e); }
+    return res.json({ ok: true, profile: { personalNumber: p.personalNumber, name: p.name, email: p.email, phone: p.phone, password: p.password, balance: Number(p.balance || 0), canEdit: !!p.canEdit } });
   } catch (err) {
-    console.error('/api/charges err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
+    console.error('register fallback error', err);
+    return res.status(500).json({ ok: false, error: String(err) });
   }
 });
 
-/* ---------- orders endpoints (if client posts orders directly) ---------- */
-app.post('/api/orders', async (req, res) => {
-  try {
-    const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount } = req.body || {};
-    if(!personal || !type) return res.status(400).json({ ok:false, error:'missing_fields' });
+// ------ login ------
+app.post('/api/login', async (req, res) => {
+  const { personalNumber, email, password, name, phone } = req.body || {};
+  let profile = null;
 
-    if(paidWithBalance){
-      // delegate to same logic as charges: attempt to deduct and create order
-      // we reuse code path by constructing equivalent body and calling the charges handler behavior:
-      req.body.amount = paidAmount || paidAmount === 0 ? paidAmount : 0;
-      req.body.type = type;
-      req.body.item = item;
-      // fallback: call charges route logic by duplicating (simpler inline)
-      if(SUPABASE_ENABLED){
-        const { data: profRow, error: profErr } = await supabase.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-        if(profErr) { console.error('supabase find profile err', profErr); return res.status(500).json({ ok:false, error:'db_error' }); }
-        if(!profRow) return res.status(404).json({ ok:false, error:'profile_not_found' });
-        const profile = mapProfileFromRow(profRow);
-        if(Number(profile.balance) < Number(paidAmount)) return res.status(400).json({ ok:false, error:'insufficient_balance' });
-        const newBal = Number(profile.balance) - Number(paidAmount);
-        const { data: updData, error: updErr } = await supabase.from('profiles').update({ balance: newBal }).eq('personal_number', String(personal)).select().maybeSingle();
-        if(updErr) { console.error('supabase update balance err', updErr); return res.status(500).json({ ok:false, error:'db_update_error' }); }
-
-        const o = {
-          personal_number: String(personal),
-          phone: phone || '',
-          type: type || '',
-          item: item || '',
-          id_field: idField || '',
-          file_link: fileLink || '',
-          cash_method: cashMethod || '',
-          status: 'pending',
-          replied: false,
-          paid_with_balance: true,
-          paid_amount: Number(paidAmount || 0),
-          created_at: new Date().toISOString()
-        };
-        const { error: oErr } = await supabase.from('orders').insert(o);
-        if(oErr) console.warn('supabase orders insert err', oErr);
-
-        const updatedProfile = mapProfileFromRow(updData || profRow);
-        return res.json({ ok:true, order: o, profile: updatedProfile });
-      } else {
-        const p = DB.profiles.find(x => String(x.personalNumber) === String(personal));
-        if(!p) return res.status(404).json({ ok:false, error:'profile_not_found' });
-        if(Number(p.balance) < Number(paidAmount)) return res.status(400).json({ ok:false, error:'insufficient_balance' });
-        p.balance = Number(p.balance) - Number(paidAmount);
-        const oid = Date.now();
-        const orderRec = { id: oid, personal: String(personal), phone: phone||'', type: type||'', item: item||'', idField: idField||'', fileLink: fileLink||'', cashMethod: cashMethod||'', status:'pending', replied:false, paidWithBalance: true, paidAmount: Number(paidAmount||0), createdAt: new Date().toISOString() };
-        DB.orders.push(orderRec);
-        saveData(DB);
-        return res.json({ ok:true, order: orderRec, profile: p });
-      }
-    }
-
-    // normal order (no balance)
-    if(SUPABASE_ENABLED){
-      const toInsert = {
-        personal_number: String(personal),
-        phone: phone || '',
-        type: type || '',
-        item: item || '',
-        id_field: idField || '',
-        file_link: fileLink || '',
-        cash_method: cashMethod || '',
-        status: 'pending',
-        replied: false,
-        paid_with_balance: false,
-        paid_amount: Number(paidAmount || 0),
-        created_at: new Date().toISOString()
-      };
-      const { error } = await supabase.from('orders').insert(toInsert);
-      if(error) { console.error('supabase orders insert err', error); return res.status(500).json({ ok:false, error:'db_insert_error' }); }
-      return res.json({ ok:true, order: toInsert });
+  if (personalNumber) {
+    profile = await findProfileByPersonal(personalNumber);
+  } else if (email) {
+    profile = await findProfileByEmail(email);
+  } else if (name && phone) {
+    // try to find by name + phone
+    if (useSupabase) {
+      try {
+        const { data, error } = await sb.from('profiles').select('*').ilike('name', String(name)).eq('phone', String(phone)).limit(1).maybeSingle();
+        if (data) profile = mapSbProfileToResponse(data);
+      } catch (e) { console.warn('sb find by name+phone error', e); }
     } else {
-      const id = Date.now();
-      const rec = { id, personal: String(personal), phone: phone||'', type: type||'', item: item||'', idField: idField||'', fileLink: fileLink||'', cashMethod: cashMethod||'', status:'pending', replied:false, paidWithBalance: false, paidAmount: Number(paidAmount||0), createdAt: new Date().toISOString() };
-      DB.orders.push(rec);
-      saveData(DB);
-      return res.json({ ok:true, order: rec });
+      const p = DB.profiles.find(x => String(x.name) === String(name) && String(x.phone) === String(phone));
+      if (p) profile = { personalNumber: p.personalNumber, name: p.name, email: p.email, phone: p.phone, password: p.password, balance: Number(p.balance || 0), canEdit: !!p.canEdit };
     }
-  } catch(err){
-    console.error('/api/orders POST err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
   }
-});
 
-app.get('/api/orders/:personal', async (req, res) => {
+  if (!profile) {
+    // not found
+    return res.status(404).json({ ok: false, error: 'not_found' });
+  }
+
+  // password check if set on record
+  if (profile.password && profile.password.length > 0) {
+    if (typeof password === 'undefined' || String(password) !== String(profile.password)) {
+      return res.status(401).json({ ok: false, error: 'invalid_password' });
+    }
+  }
+
+  // update last login
   try {
-    const personal = String(req.params.personal || '');
-    if(!personal) return res.status(400).json({ ok:false, error:'missing_personal' });
-
-    if(SUPABASE_ENABLED){
-      const [{ data: orders, error: oErr }, { data: charges, error: cErr }] = await Promise.all([
-        supabase.from('orders').select('*').eq('personal_number', personal).order('created_at', { ascending: false }),
-        supabase.from('charges').select('*').eq('personal_number', personal).order('created_at', { ascending: false })
-      ]);
-      if(oErr) console.warn('orders fetch err', oErr);
-      if(cErr) console.warn('charges fetch err', cErr);
-      return res.json({ ok:true, orders: (orders||[]).map(mapOrderRow), charges: (charges||[]).map(mapChargeRow) });
+    if (useSupabase) {
+      await sb.from('profiles').update({ last_login: new Date().toISOString() }).eq('personal_number', profile.personalNumber);
     } else {
-      const orders = DB.orders.filter(o => String(o.personal) === personal).map(o => { o.createdAt = o.createdAt || o.created_at || new Date().toISOString(); return mapOrderRow(o); });
-      const charges = DB.charges.filter(c => String(c.personal) === personal).map(c => { c.createdAt = c.createdAt || c.created_at || new Date().toISOString(); return mapChargeRow(c); });
-      return res.json({ ok:true, orders, charges });
+      const p = DB.profiles.find(x => String(x.personalNumber) === String(profile.personalNumber));
+      if (p) { p.lastLogin = new Date().toISOString(); saveData(DB); }
     }
-  } catch(err){
-    console.error('/api/orders GET err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
-  }
+  } catch (e) { console.warn('update last login failed', e); }
+
+  // telegram notify (keeps original behaviour)
+  (async () => {
+    try {
+      const text = `تسجيل دخول:\nالاسم: ${profile.name || 'غير معروف'}\nالرقم الشخصي: ${profile.personalNumber}\nالهاتف: ${profile.phone || 'لا يوجد'}\nالبريد: ${profile.email || 'لا يوجد'}\nالوقت: ${new Date().toISOString()}`;
+      await fetch(`https://api.telegram.org/bot${CFG.BOT_LOGIN_REPORT_TOKEN}/sendMessage`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: CFG.BOT_LOGIN_REPORT_CHAT, text })
+      });
+    } catch (e) { /* ignore */ }
+  })();
+
+  return res.json({ ok: true, profile });
 });
 
-/* ---------- notifications endpoints ---------- */
+// ------- notifications: returns profile + offers + orders + charges + notifications -------
 app.get('/api/notifications/:personal', async (req, res) => {
+  const personal = req.params.personal;
+  const prof = await findProfileByPersonal(personal);
+  if (!prof) return res.json({ ok: false, error: 'not found' });
+
   try {
-    const personal = String(req.params.personal || '');
-    if(!personal) return res.status(400).json({ ok:false, error:'missing_personal' });
+    let visibleOffers = [];
+    let userOrders = [];
+    let userCharges = [];
+    let userNotifications = [];
 
-    if(SUPABASE_ENABLED){
-      const [notifQ, ordersQ, chargesQ, offersQ, profileQ] = await Promise.all([
-        supabase.from('notifications').select('*').eq('personal', personal).order('created_at', { ascending: false }),
-        supabase.from('orders').select('*').eq('personal_number', personal).order('created_at', { ascending: false }),
-        supabase.from('charges').select('*').eq('personal_number', personal).order('created_at', { ascending: false }),
-        supabase.from('offers').select('*').order('created_at', { ascending: false }),
-        supabase.from('profiles').select('*').eq('personal_number', personal).limit(1).maybeSingle()
-      ]);
-      const notifications = (notifQ.data||[]).map(mapNotificationRow);
-      const orders = (ordersQ.data||[]).map(mapOrderRow);
-      const charges = (chargesQ.data||[]).map(mapChargeRow);
-      const offers = (offersQ.data||[]).map(mapOfferRow);
-      const profile = profileQ.data ? mapProfileFromRow(profileQ.data) : null;
-      return res.json({ ok:true, notifications, orders, charges, offers, profile, canEdit: profile ? profile.canEdit : false });
+    if (useSupabase) {
+      try {
+        const { data: offersData } = await sb.from('offers').select('*');
+        visibleOffers = (Array.isArray(offersData) ? offersData : []).filter(o => String(personal).length === 7); // keep same rule
+      } catch (e) { console.warn('sb offers error', e); }
+
+      try {
+        const { data: ordersData } = await sb.from('orders').select('*').eq('personal_number', String(personal));
+        userOrders = ordersData || [];
+      } catch (e) { console.warn('sb orders error', e); }
+
+      try {
+        const { data: chargesData } = await sb.from('charges').select('*').eq('personal_number', String(personal));
+        userCharges = chargesData || [];
+      } catch (e) { console.warn('sb charges error', e); }
+
+      try {
+        const { data: nots } = await sb.from('notifications').select('*').eq('personal_number', String(personal));
+        userNotifications = nots || [];
+      } catch (e) { console.warn('sb notifications error', e); }
+
     } else {
-      const notifications = DB.notifications.filter(n => String(n.personal) === personal).map(n => { n.createdAt = n.createdAt || n.created_at || new Date().toISOString(); return mapNotificationRow(n); });
-      const orders = DB.orders.filter(o => String(o.personal) === personal).map(o => { o.createdAt = o.createdAt || o.created_at || new Date().toISOString(); return mapOrderRow(o); });
-      const charges = DB.charges.filter(c => String(c.personal) === personal).map(c => { c.createdAt = c.createdAt || c.created_at || new Date().toISOString(); return mapChargeRow(c); });
-      const offers = (DB.offers || []).map(o => { o.createdAt = o.createdAt || o.created_at || new Date().toISOString(); return mapOfferRow(o); });
-      const profile = DB.profiles.find(p => String(p.personalNumber) === personal) || null;
-      return res.json({ ok:true, notifications, orders, charges, offers, profile, canEdit: profile ? !!profile.canEdit : false });
+      visibleOffers = DB.offers || [];
+      userOrders = DB.orders.filter(o => String(o.personalNumber) === String(personal) || String(o.personalNumber) === String(personal));
+      userCharges = DB.charges.filter(c => String(c.personalNumber) === String(personal));
+      userNotifications = (DB.notifications || []).filter(n => String(n.personal) === String(personal));
     }
-  } catch (err) {
-    console.error('/api/notifications err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
+
+    return res.json({ ok: true, profile: prof, offers: visibleOffers, orders: userOrders, charges: userCharges, notifications: userNotifications, canEdit: !!prof.canEdit });
+  } catch (e) {
+    console.error('notifications endpoint error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-app.post('/api/notifications/mark-read', async (req, res) => {
+// mark-read (body or param)
+app.post('/api/notifications/mark-read/:personal?', async (req, res) => {
+  const personal = req.body && req.body.personal ? String(req.body.personal) : (req.params.personal ? String(req.params.personal) : null);
+  if (!personal) return res.status(400).json({ ok: false, error: 'missing personal' });
+
   try {
-    const { personal } = req.body || {};
-    if(!personal) return res.status(400).json({ ok:false, error:'missing_personal' });
-
-    if(SUPABASE_ENABLED){
-      const { error } = await supabase.from('notifications').update({ read: true }).eq('personal', String(personal));
-      if(error) { console.error('supabase mark-read err', error); return res.status(500).json({ ok:false, error:'db_update_error' }); }
-      return res.json({ ok:true });
+    if (useSupabase) {
+      await sb.from('notifications').update({ read: true }).eq('personal_number', String(personal));
+      // clear replied flags in orders/charges if desired
+      await sb.from('orders').update({ replied: false }).eq('personal_number', String(personal)).is('replied', true);
+      await sb.from('charges').update({ replied: false }).eq('personal_number', String(personal)).is('replied', true);
     } else {
-      DB.notifications = DB.notifications.map(n => (String(n.personal) === String(personal) ? Object.assign({}, n, { read: true }) : n));
+      if (!DB.notifications) DB.notifications = [];
+      DB.notifications.forEach(n => { if (String(n.personal) === String(personal)) n.read = true; });
+      if (Array.isArray(DB.orders)) {
+        DB.orders.forEach(o => { if (String(o.personalNumber) === String(personal) && o.replied) o.replied = false; });
+      }
+      if (Array.isArray(DB.charges)) {
+        DB.charges.forEach(c => { if (String(c.personalNumber) === String(personal) && c.replied) c.replied = false; });
+      }
       saveData(DB);
-      return res.json({ ok:true });
     }
-  } catch(err){
-    console.error('/api/notifications/mark-read err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.warn('mark-read error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-app.post('/api/notifications/mark-read/:personal', async (req, res) => {
-  try{
-    const personal = String(req.params.personal || '');
-    if(!personal) return res.status(400).json({ ok:false, error:'missing_personal' });
-    if(SUPABASE_ENABLED){
-      const { error } = await supabase.from('notifications').update({ read: true }).eq('personal', personal);
-      if(error) { console.error('supabase mark-read err', error); return res.status(500).json({ ok:false, error:'db_update_error' }); }
-      return res.json({ ok:true });
-    } else {
-      DB.notifications = DB.notifications.map(n => (String(n.personal) === personal ? Object.assign({}, n, { read: true }) : n));
-      saveData(DB);
-      return res.json({ ok:true });
-    }
-  }catch(err){
-    console.error('/api/notifications/mark-read/:personal err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
-  }
-});
-
+// clear notifications
 app.post('/api/notifications/clear', async (req, res) => {
+  const { personal } = req.body || {};
+  if (!personal) return res.status(400).json({ ok: false, error: 'missing personal' });
   try {
-    const { personal } = req.body || {};
-    if(!personal) return res.status(400).json({ ok:false, error:'missing_personal' });
-
-    if(SUPABASE_ENABLED){
-      const { error } = await supabase.from('notifications').delete().eq('personal', String(personal));
-      if(error) { console.error('supabase notifications delete err', error); return res.status(500).json({ ok:false, error:'db_delete_error' }); }
-      return res.json({ ok:true });
+    if (useSupabase) {
+      // delete or set flag — here we delete matching notifications
+      await sb.from('notifications').delete().eq('personal_number', String(personal));
     } else {
-      DB.notifications = DB.notifications.filter(n => String(n.personal) !== String(personal));
+      DB.notifications = (DB.notifications || []).filter(n => String(n.personal) !== String(personal));
       saveData(DB);
-      return res.json({ ok:true });
     }
-  } catch(err){
-    console.error('/api/notifications/clear err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.warn('clear notifications error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-/* ---------- offers ack (simple) ---------- */
-app.post('/api/offers/ack', async (req, res) => {
-  try {
-    const { id, personal } = req.body || {};
-    if(!id || !personal) return res.status(400).json({ ok:false, error:'missing_fields' });
+// The rest of original endpoints (help, orders, charge, offer ack) are kept and try to use supabase if available.
+// For brevity I reuse most logic from original file but route to sb if present.
 
-    // This is a lightweight ack: we can record that this user acknowledged the offer
-    if(SUPABASE_ENABLED){
-      // optionally create a notification row (or create a table mapping acks). For simplicity add a notification:
-      const row = { id: `ack-${Date.now()}`, personal: String(personal), text: `تم تفعيل العرض: ${String(id)}`, read: false, created_at: new Date().toISOString() };
-      const { error } = await supabase.from('notifications').insert(row);
-      if(error) console.warn('supabase offer-ack insert err', error);
-      return res.json({ ok:true });
-    } else {
-      DB.notifications.push({ id: `ack-${Date.now()}`, personal: String(personal), text: `تم تفعيل العرض: ${String(id)}`, read:false, createdAt: new Date().toISOString() });
-      saveData(DB);
-      return res.json({ ok:true });
-    }
-  }catch(err){
-    console.error('/api/offers/ack err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
+app.post('/api/help', async (req, res) => {
+  const { personal, issue, fileLink, desc, name, email, phone } = req.body;
+  const prof = await ensureProfile(personal);
+  const text = `مشكلة من المستخدم:\nالاسم: ${name || prof.name || 'غير معروف'}\nالرقم الشخصي: ${personal}\nالهاتف: ${phone || prof.phone || 'لا يوجد'}\nالبريد: ${email || prof.email || 'لا يوجد'}\nالمشكلة: ${issue}\nالوصف: ${desc || ''}\nرابط الملف: ${fileLink || 'لا يوجد'}`;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_HELP_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: CFG.BOT_HELP_CHAT, text })
+    });
+    const data = await r.json().catch(() => null);
+    return res.json({ ok: true, telegramResult: data });
+  } catch (e) {
+    console.warn('help send error', e);
+    return res.json({ ok: false, error: e.message || String(e) });
   }
 });
 
-/* ---------- support ---------- */
-app.post('/api/support', async (req, res) => {
-  try {
-    const { personal, text } = req.body || {};
-    if(!personal || !text) return res.status(400).json({ ok:false, error:'missing_fields' });
+app.post('/api/orders', async (req, res) => {
+  const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount } = req.body;
+  if (!personal || !type || !item) return res.status(400).json({ ok: false, error: 'missing fields' });
+  const prof = await ensureProfile(personal);
 
-    if(SUPABASE_ENABLED){
-      const row = { id: `notif-${Date.now()}`, personal: String(personal), text: String(text), read:false, created_at: new Date().toISOString() };
-      const { error } = await supabase.from('notifications').insert(row);
-      if(error) { console.error('supabase notifications insert err', error); return res.status(500).json({ ok:false, error:'db_insert_error' }); }
-      return res.json({ ok:true });
-    } else {
-      const n = { id: `notif-${Date.now()}`, personal: String(personal), text: String(text), read:false, createdAt: new Date().toISOString() };
-      DB.notifications.push(n);
-      saveData(DB);
-      return res.json({ ok:true });
+  try {
+    if (paidWithBalance) {
+      const price = Number(paidAmount || 0);
+      if (isNaN(price) || price <= 0) return res.status(400).json({ ok: false, error: 'invalid_paid_amount' });
+      // check and deduct balance on sb or local
+      if (useSupabase) {
+        const { data: profileRow } = await sb.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
+        const bal = profileRow ? Number(profileRow.balance || 0) : 0;
+        if (bal < price) return res.status(402).json({ ok: false, error: 'insufficient_balance' });
+        await sb.from('profiles').update({ balance: bal - price }).eq('personal_number', String(personal));
+        await sb.from('notifications').insert([{
+          personal_number: String(personal),
+          text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
+          read: false,
+          created_at: new Date().toISOString()
+        }]);
+      } else {
+        const p = DB.profiles.find(x => String(x.personalNumber) === String(personal));
+        if (p) {
+          if (Number(p.balance || 0) < price) return res.status(402).json({ ok: false, error: 'insufficient_balance' });
+          p.balance = Number(p.balance || 0) - price;
+          if (!DB.notifications) DB.notifications = [];
+          DB.notifications.unshift({
+            id: String(Date.now()) + '-charge',
+            personal: String(p.personalNumber),
+            text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
+            read: false,
+            createdAt: new Date().toISOString()
+          });
+          saveData(DB);
+        }
+      }
     }
-  } catch (err) {
-    console.error('/api/support err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
+
+    const orderId = Date.now();
+    const order = {
+      id: orderId,
+      personalNumber: String(personal),
+      phone: phone || prof.phone || '',
+      type, item, idField: idField || '',
+      fileLink: fileLink || '',
+      cashMethod: cashMethod || '',
+      status: 'قيد المراجعة',
+      replied: false,
+      telegramMessageId: null,
+      paidWithBalance: !!paidWithBalance,
+      paidAmount: Number(paidAmount || 0),
+      createdAt: new Date().toISOString()
+    };
+
+    if (useSupabase) {
+      try {
+        const sbRow = {
+          id: orderId,
+          personal_number: String(personal),
+          phone: order.phone,
+          type: order.type,
+          item: order.item,
+          id_field: order.idField || '',
+          file_link: order.fileLink || '',
+          cash_method: order.cashMethod || '',
+          status: order.status,
+          replied: order.replied,
+          paid_with_balance: order.paidWithBalance,
+          paid_amount: order.paidAmount,
+          created_at: order.createdAt
+        };
+        const { data } = await sb.from('orders').insert([sbRow]).select().maybeSingle();
+        // send telegram etc.
+      } catch (e) { console.warn('sb insert order error', e); }
+    } else {
+      DB.orders.unshift(order);
+      saveData(DB);
+    }
+
+    // send telegram notification to admin (kept behaviour)
+    const text = `طلب شحن جديد:\n\nرقم شخصي: ${order.personalNumber}\nالهاتف: ${order.phone || 'لا يوجد'}\nالنوع: ${order.type}\nالتفاصيل: ${order.item}\nالايدي: ${order.idField || ''}\nطريقة الدفع: ${order.cashMethod || ''}\nرابط الملف: ${order.fileLink || ''}\nمعرف الطلب: ${order.id}`;
+    try {
+      await fetch(`https://api.telegram.org/bot${CFG.BOT_ORDER_TOKEN}/sendMessage`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: CFG.BOT_ORDER_CHAT, text })
+      });
+    } catch (e) { console.warn('send order failed', e); }
+
+    return res.json({ ok: true, order });
+  } catch (e) {
+    console.error('create order error', e);
+    return res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
-/* ---------- profile edit ---------- */
-app.post('/api/profile/request-edit', async (req, res) => {
-  try {
-    const { personal } = req.body || {};
-    if(!personal) return res.status(400).json({ ok:false, error:'missing_personal' });
+// charge endpoint (طلب شحن رصيد)
+app.post('/api/charge', async (req, res) => {
+  const { personal, phone, amount, method, fileLink } = req.body;
+  if (!personal || !amount) return res.status(400).json({ ok: false, error: 'missing fields' });
+  const prof = await ensureProfile(personal);
+  const chargeId = Date.now();
+  const charge = {
+    id: chargeId,
+    personalNumber: String(personal),
+    phone: phone || prof.phone || '',
+    amount, method, fileLink: fileLink || '',
+    status: 'قيد المراجعة',
+    telegramMessageId: null,
+    createdAt: new Date().toISOString()
+  };
 
-    if(SUPABASE_ENABLED){
-      const row = { msg_id: Date.now(), personal: String(personal) };
-      const { error } = await supabase.from('profile_edit_requests').insert(row);
-      if(error) console.warn('profile edit request insert err', error);
-      return res.json({ ok:true });
-    } else {
-      DB.profileEditRequests[personal] = { requestedAt: new Date().toISOString() };
-      saveData(DB);
-      return res.json({ ok:true });
-    }
-  } catch(err){
-    console.error('/api/profile/request-edit err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
+  if (useSupabase) {
+    try {
+      await sb.from('charges').insert([{
+        id: chargeId,
+        personal_number: String(personal),
+        phone: charge.phone,
+        amount: charge.amount,
+        method: charge.method,
+        file_link: charge.fileLink,
+        status: charge.status,
+        created_at: charge.createdAt
+      }]);
+    } catch (e) { console.warn('sb insert charge error', e); }
+  } else {
+    DB.charges.unshift(charge);
+    saveData(DB);
+  }
+
+  const text = `طلب شحن رصيد:\n\nرقم شخصي: ${personal}\nالهاتف: ${charge.phone || 'لا يوجد'}\nالمبلغ: ${amount}\nطريقة الدفع: ${method}\nرابط الملف: ${fileLink || ''}\nمعرف الطلب: ${chargeId}`;
+  try {
+    await fetch(`https://api.telegram.org/bot${CFG.BOT_BALANCE_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: CFG.BOT_BALANCE_CHAT, text })
+    });
+  } catch (e) { console.warn('send charge failed', e); }
+
+  return res.json({ ok: true, charge });
+});
+
+// offer ack
+app.post('/api/offer/ack', async (req, res) => {
+  const { personal, offerId } = req.body;
+  if (!personal || !offerId) return res.status(400).json({ ok: false, error: 'missing' });
+  const prof = await ensureProfile(personal);
+  const text = `لقد حصل على العرض او الهدية\nالرقم الشخصي: ${personal}\nالبريد: ${prof.email || 'لا يوجد'}\nالهاتف: ${prof.phone || 'لا يوجد'}\nالعرض: ${offerId}`;
+  try {
+    await fetch(`https://api.telegram.org/bot${CFG.BOT_OFFERS_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: CFG.BOT_OFFERS_CHAT, text })
+    });
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.json({ ok: false, error: String(e) });
   }
 });
 
-app.post('/api/profile/submit-edit', async (req, res) => {
-  try {
-    const { personal, name, email, password, phone } = req.body || {};
-    if(!personal) return res.status(400).json({ ok:false, error:'missing_personal' });
-
-    if(SUPABASE_ENABLED){
-      const updates = {};
-      if(typeof name !== 'undefined') updates.name = name;
-      if(typeof email !== 'undefined') updates.email = email;
-      if(typeof password !== 'undefined') updates.password = password;
-      if(typeof phone !== 'undefined') updates.phone = phone;
-      const { error } = await supabase.from('profiles').update(updates).eq('personal_number', String(personal));
-      if(error) { console.error('supabase profile update err', error); return res.status(500).json({ ok:false, error:'db_update_error' }); }
-      const { data } = await supabase.from('profiles').select('*').eq('personal_number', String(personal)).limit(1).maybeSingle();
-      return res.json({ ok:true, profile: data ? mapProfileFromRow(data) : null });
-    } else {
-      const p = DB.profiles.find(x => String(x.personalNumber) === String(personal));
-      if(!p) return res.status(404).json({ ok:false, error:'not_found' });
-      if(typeof name !== 'undefined') p.name = name;
-      if(typeof email !== 'undefined') p.email = email;
-      if(typeof password !== 'undefined') p.password = password;
-      if(typeof phone !== 'undefined') p.phone = phone;
-      p.canEdit = false;
-      saveData(DB);
-      return res.json({ ok:true, profile: p });
-    }
-  } catch(err){
-    console.error('/api/profile/submit-edit err', err);
-    return res.status(500).json({ ok:false, error: String(err) });
-  }
-});
-
-/* ---------- API-only: run ---------- */
 app.listen(PORT, () => {
-  console.log(`API Server listening on port ${PORT} — SUPABASE_ENABLED=${SUPABASE_ENABLED}`);
+  console.log(`Server listening on port ${PORT}`);
 });
