@@ -1,322 +1,595 @@
-// server.js
-// تثبيت الحزم: npm install express dotenv
-// تشغيل: node server.js
+/**
+ * server/server.js
+ * نسخة معدّلة بسيطة: يطبع ردود Telegram للتشخيص، يدعم BOT_NOTIFY_TOKEN و BOT_NOTIFY_CHAT من env،
+ * ويمد endpoint mark-read ليدعم body أو param، ويعيد تهيئة flags المرتبطة بالباج.
+ */
 
-require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
+const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_FILE = path.join(__dirname, 'db.json');
+app.use(cors());
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const CFG = {
+  BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || "",
+  BOT_ORDER_CHAT: process.env.BOT_ORDER_CHAT || "",
 
-// ---------- CONFIG (يفضل وضع القيم في بيئة الاستضافة، لكن يقرأ من env هنا) ----------
-const CONFIG = {
-  ADMIN_USER: process.env.ADMIN_USER || 'admin',
-  ADMIN_PASS: process.env.ADMIN_PASS || 'nimda',
+  BOT_BALANCE_TOKEN: process.env.BOT_BALANCE_TOKEN || "",
+  BOT_BALANCE_CHAT: process.env.BOT_BALANCE_CHAT || "",
 
-  BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || '',
-  BOT_ORDER_CHAT: process.env.BOT_ORDER_CHAT || '',
+  BOT_ADMIN_CMD_TOKEN: process.env.BOT_ADMIN_CMD_TOKEN || "",
+  BOT_ADMIN_CMD_CHAT: process.env.BOT_ADMIN_CMD_CHAT || "",
 
-  BOT_BALANCE_TOKEN: process.env.BOT_BALANCE_TOKEN || '',
-  BOT_BALANCE_CHAT: process.env.BOT_BALANCE_CHAT || '',
+  BOT_LOGIN_REPORT_TOKEN: process.env.BOT_LOGIN_REPORT_TOKEN || "",
+  BOT_LOGIN_REPORT_CHAT: process.env.BOT_LOGIN_REPORT_CHAT || "",
 
-  BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || '',
-  BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || '',
+  BOT_HELP_TOKEN: process.env.BOT_HELP_TOKEN || "",
+  BOT_HELP_CHAT: process.env.BOT_HELP_CHAT || "",
 
-  BOT_LOGIN_REPORT_TOKEN: process.env.BOT_LOGIN_REPORT_TOKEN || '',
-  BOT_LOGIN_REPORT_CHAT: process.env.BOT_LOGIN_REPORT_CHAT || '',
+  BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || "",
+  BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || "",
 
-  BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || '',
-  BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || '',
+  // البوت الذي تستخدمه لإرسال رسائل مباشرة للمستخدمين (تم إضافة هذا)
+  BOT_NOTIFY_TOKEN: process.env.BOT_NOTIFY_TOKEN || "",
+  BOT_NOTIFY_CHAT: process.env.BOT_NOTIFY_CHAT || "",
 
-  BOT_OFFERS_TOKEN: process.env.BOT_OFFERS_TOKEN || '',
-  BOT_OFFERS_CHAT: process.env.BOT_OFFERS_CHAT || '',
-
-  BOT_ADMIN_CMD_TOKEN: process.env.BOT_ADMIN_CMD_TOKEN || '',
-  BOT_ADMIN_CMD_CHAT: process.env.BOT_ADMIN_CMD_CHAT || '',
+  IMGBB_KEY: process.env.IMGBB_KEY || ""
 };
 
-// ---------- DB helpers ----------
-function loadDB(){
-  try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); }
-  catch(e){ return { profiles: [], orders: [], charges: [], logs: [] }; }
-}
-function saveDB(db){
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
-}
-if(!fs.existsSync(DB_FILE)) saveDB({ profiles: [], orders: [], charges: [], logs: [] });
-function makeId(prefix='id'){ return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
+const DATA_FILE = path.join(__dirname, 'data.json');
 
-// ---------- Admin SSE (Server-Sent Events) ----------
-const sseClients = new Map(); // token -> [res, ...]   (token may be same for multiple tabs)
-
-function registerSSE(token, res){
-  if(!sseClients.has(token)) sseClients.set(token, []);
-  sseClients.get(token).push(res);
-  // cleanup on client close
-  reqOnClose(res, () => {
-    const arr = sseClients.get(token) || [];
-    const idx = arr.indexOf(res);
-    if(idx !== -1) arr.splice(idx,1);
-    if(arr.length === 0) sseClients.delete(token);
-  });
-}
-
-function reqOnClose(res, cb){
-  res.on('close', cb);
-  res.on('finish', cb);
-}
-
-// broadcast helper (sends payload to all admin SSE clients)
-function broadcastToAdmins(eventType, payload){
-  const msg = JSON.stringify({ event: eventType, payload, ts: Date.now() });
-  for(const [token, resList] of sseClients.entries()){
-    resList.forEach(res => {
-      try{
-        res.write(`event: ${eventType}\n`);
-        res.write(`data: ${msg}\n\n`);
-      }catch(e){ /* ignore individual client errors */ }
-    });
-  }
-}
-
-// ---------- Telegram helper (sends to telegram & broadcasts to admin SSE + logs) ----------
-async function tgSend(token, chatId, text){
-  // broadcast locally to admins first (immediate)
-  broadcastToAdmins('telegram', { text, chatId, tokenPresent: !!token });
-
-  // save to logs
-  const db1 = loadDB();
-  db1.logs = db1.logs || [];
-  db1.logs.unshift({ id: makeId('log'), type: 'telegram', text, chatId, when: Date.now() });
-  if(db1.logs.length > 1000) db1.logs.length = 1000;
-  saveDB(db1);
-
-  // send to telegram if token+chatId provided
-  if(!token || !chatId) return;
+function loadData(){
   try{
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type':'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text })
-    });
-  }catch(err){
-    console.warn('tg send failed', err);
-    // broadcast failure to admins
-    broadcastToAdmins('telegram_error', { text, error: String(err) });
+    if(!fs.existsSync(DATA_FILE)){
+      const init = {
+        profiles: [],
+        orders: [],
+        charges: [],
+        offers: [],
+        notifications: [],
+        profileEditRequests: {},
+        blocked: [],
+        tgOffsets: {}
+      };
+      fs.writeFileSync(DATA_FILE, JSON.stringify(init, null, 2));
+      return init;
+    }
+    const raw = fs.readFileSync(DATA_FILE,'utf8');
+    return JSON.parse(raw || '{}');
+  }catch(e){
+    console.error('loadData error', e);
+    return { profiles:[], orders:[], charges:[], offers:[], notifications:[], profileEditRequests:{}, blocked:[], tgOffsets:{} };
   }
 }
+function saveData(d){ try{ fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 2)); }catch(e){ console.error('saveData error', e); } }
+let DB = loadData();
 
-// ---------- Serve frontends (files must exist) ----------
-app.get(['/','/app'], (req,res) => {
-  const f = path.join(__dirname, '12 الضهر.html');
-  if(!fs.existsSync(f)) return res.status(404).send('12 الضهر.html not found');
-  res.sendFile(f);
-});
-app.get('/admin', (req,res) => {
-  const f = path.join(__dirname, 'admin.html');
-  if(!fs.existsSync(f)) return res.status(404).send('admin.html not found');
-  res.sendFile(f);
-});
-
-// ---------- Public API endpoints ----------
-app.post('/api/order', async (req,res) => {
-  const db = loadDB();
-  const o = {
-    id: makeId('order'),
-    createdAt: Date.now(),
-    type: req.body.type || 'شحن',
-    item: req.body.item || '',
-    personalNumber: req.body.personalNumber || '',
-    phone: req.body.phone || '',
-    email: req.body.email || '',
-    paidWithBalance: !!req.body.paidWithBalance,
-    paidAmount: Number(req.body.paidAmount || 0),
-    status: 'قيد المراجعة'
-  };
-  db.orders = db.orders || [];
-  db.orders.unshift(o);
-  saveDB(db);
-
-  // notify telegram and admin SSE
-  await tgSend(CONFIG.BOT_ORDER_TOKEN, CONFIG.BOT_ORDER_CHAT,
-    `📦 طلب جديد #${o.id}\nالنوع: ${o.type}\nالزبون: ${o.personalNumber}\nالعنصر: ${o.item}\nالمبلغ: ${o.paidAmount}`);
-
-  // broadcast order-created
-  broadcastToAdmins('order_created', o);
-
-  res.json({ ok:true, order: o });
-});
-
-app.get('/api/orders', (req,res) => {
-  const db = loadDB();
-  res.json({ ok:true, orders: db.orders || [] });
-});
-
-// simple login/register for users (frontend should call)
-app.post('/api/login', async (req,res) => {
-  const db = loadDB();
-  const { name, personalNumber, email, password } = req.body;
-  let p = db.profiles.find(x => x.personalNumber === personalNumber);
+function findProfileByPersonal(n){
+  return DB.profiles.find(p => String(p.personalNumber) === String(n)) || null;
+}
+function ensureProfile(personal){
+  let p = findProfileByPersonal(personal);
   if(!p){
-    p = { id: makeId('u'), name, personalNumber, email, password, balance: 0, lastLogin: Date.now() };
-    db.profiles.push(p);
-  }else{
-    p.lastLogin = Date.now();
-    if(name) p.name = name;
-    if(email) p.email = email;
-    if(password) p.password = password;
+    p = { personalNumber: String(personal), name: 'ضيف', email:'', phone:'', password:'', balance: 0, canEdit:false };
+    DB.profiles.push(p); saveData(DB);
+  } else {
+    if(typeof p.balance === 'undefined') p.balance = 0;
   }
-  saveDB(db);
-
-  // notify admin about login
-  await tgSend(CONFIG.BOT_LOGIN_REPORT_TOKEN, CONFIG.BOT_LOGIN_REPORT_CHAT,
-    `👤 دخول/تسجيل: ${p.name} (${p.personalNumber})`);
-
-  broadcastToAdmins('user_login', { id: p.id, name: p.name, personalNumber: p.personalNumber, lastLogin: p.lastLogin });
-
-  res.json({ ok:true, profile: p });
-});
-
-// ---------- Admin logic (auth, data, SSE stream) ----------
-const ADMIN_SESS = {}; // token -> {exp}
-
-function makeAdminToken(){ return makeId('adm'); }
-function verifyAdminToken(tok){ return !!(tok && ADMIN_SESS[tok] && Date.now() < ADMIN_SESS[tok].exp); }
-function requireAdmin(req,res,next){
-  const tok = req.headers['x-admin-token'] || req.query.adminToken || req.body.adminToken;
-  if(!verifyAdminToken(tok)) return res.status(401).json({ ok:false, error:'unauthorized' });
-  req.adminToken = tok;
-  next();
+  return p;
 }
 
-// admin login
-app.post('/api/admin/login', (req,res) => {
-  const { username, password } = req.body || {};
-  if(username !== CONFIG.ADMIN_USER || password !== CONFIG.ADMIN_PASS) return res.status(401).json({ ok:false, error:'invalid' });
-  const tok = makeAdminToken();
-  ADMIN_SESS[tok] = { exp: Date.now() + 1000*60*60*12 }; // 12 hours
-  res.json({ ok:true, token: tok, expiresAt: ADMIN_SESS[tok].exp });
+app.use(express.json({limit:'10mb'}));
+app.use(express.urlencoded({ extended:true, limit:'10mb'}));
+
+const PUBLIC_DIR = path.join(__dirname, 'public');
+if(!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+app.use('/', express.static(PUBLIC_DIR));
+
+const UPLOADS_DIR = path.join(PUBLIC_DIR, 'uploads');
+if(!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const memoryStorage = multer.memoryStorage();
+const uploadMemory = multer({ storage: memoryStorage });
+
+app.post('/api/upload', uploadMemory.single('file'), async (req, res) => {
+  if(!req.file) return res.status(400).json({ ok:false, error:'no file' });
+  try{
+    if(CFG.IMGBB_KEY){
+      try{
+        const imgBase64 = req.file.buffer.toString('base64');
+        const params = new URLSearchParams();
+        params.append('image', imgBase64);
+        params.append('name', req.file.originalname || `upload-${Date.now()}`);
+        const imgbbResp = await fetch(`https://api.imgbb.com/1/upload?key=${CFG.IMGBB_KEY}`, { method:'POST', body: params });
+        const imgbbJson = await imgbbResp.json().catch(()=>null);
+        if(imgbbJson && imgbbJson.success && imgbbJson.data && imgbbJson.data.url){
+          return res.json({ ok:true, url: imgbbJson.data.url, provider:'imgbb' });
+        }
+      }catch(e){ console.warn('imgbb upload failed', e); }
+    }
+    const safeName = Date.now() + '-' + (req.file.originalname ? req.file.originalname.replace(/\s+/g,'_') : 'upload.jpg');
+    const destPath = path.join(UPLOADS_DIR, safeName);
+    fs.writeFileSync(destPath, req.file.buffer);
+    const fullUrl = `${req.protocol}://${req.get('host')}/uploads/${encodeURIComponent(safeName)}`;
+    return res.json({ ok:true, url: fullUrl, provider:'local' });
+  }catch(err){
+    console.error('upload handler error', err);
+    return res.status(500).json({ ok:false, error: err.message || 'upload_failed' });
+  }
 });
 
-// admin logout
-app.post('/api/admin/logout', requireAdmin, (req,res) => {
-  const t = req.headers['x-admin-token'] || req.body.token;
-  if(t && ADMIN_SESS[t]) delete ADMIN_SESS[t];
-  res.json({ ok:true });
+// register
+app.post('/api/register', async (req,res)=>{
+  const { name, email, password, phone } = req.body;
+  const personalNumber = req.body.personalNumber || req.body.personal || null;
+  if(!personalNumber) return res.status(400).json({ ok:false, error:'missing personalNumber' });
+  let p = findProfileByPersonal(personalNumber);
+  if(!p){
+    p = { personalNumber: String(personalNumber), name:name||'غير معروف', email:email||'', password:password||'', phone:phone||'', balance:0, canEdit:false };
+    DB.profiles.push(p);
+  } else {
+    p.name = name || p.name;
+    p.email = email || p.email;
+    p.password = password || p.password;
+    p.phone = phone || p.phone;
+    if(typeof p.balance === 'undefined') p.balance = 0;
+  }
+  saveData(DB);
+
+  const text = `تسجيل مستخدم جديد:\nالاسم: ${p.name}\nالبريد: ${p.email || 'لا يوجد'}\nالهاتف: ${p.phone || 'لا يوجد'}\nالرقم الشخصي: ${p.personalNumber}\nكلمة السر: ${p.password || '---'}`;
+  try{
+    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_LOGIN_REPORT_TOKEN}/sendMessage`, {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_LOGIN_REPORT_CHAT, text })
+    });
+    const d = await r.json().catch(()=>null);
+    console.log('register telegram result:', d);
+  }catch(e){ console.warn('send login report failed', e); }
+
+  return res.json({ ok:true, profile:p });
 });
 
-// admin profiles (sensitive)
-app.get('/api/admin/profiles', requireAdmin, (req,res) => {
-  const db = loadDB();
-  res.json({ ok:true, profiles: db.profiles || [] });
+// login
+app.post('/api/login', async (req,res)=>{
+  const { personalNumber, email, password } = req.body || {};
+  let p = null;
+  if(personalNumber) p = findProfileByPersonal(personalNumber);
+  else if(email) p = DB.profiles.find(x => x.email && x.email.toLowerCase() === String(email).toLowerCase()) || null;
+  if(!p) return res.status(404).json({ ok:false, error:'not_found' });
+  if(typeof p.password !== 'undefined' && String(p.password).length > 0){
+    if(typeof password === 'undefined' || String(password) !== String(p.password)){
+      return res.status(401).json({ ok:false, error:'invalid_password' });
+    }
+  }
+  p.lastLogin = new Date().toISOString();
+  saveData(DB);
+
+  (async ()=>{
+    try{
+      const text = `تسجيل دخول:\nالاسم: ${p.name || 'غير معروف'}\nالرقم الشخصي: ${p.personalNumber}\nالهاتف: ${p.phone || 'لا يوجد'}\nالبريد: ${p.email || 'لا يوجد'}\nالوقت: ${p.lastLogin}`;
+      const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_LOGIN_REPORT_TOKEN}/sendMessage`, {
+        method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_LOGIN_REPORT_CHAT, text })
+      });
+      const d = await r.json().catch(()=>null);
+      console.log('login notify result:', d);
+    }catch(e){ console.warn('send login notify failed', e); }
+  })();
+
+  return res.json({ ok:true, profile:p });
 });
 
-// admin orders
-app.get('/api/admin/orders', requireAdmin, (req,res) => {
-  const db = loadDB();
-  let list = db.orders || [];
-  if(req.query.status) list = list.filter(o => String(o.status || '') === String(req.query.status));
-  res.json({ ok:true, orders: list });
-});
-app.post('/api/admin/order/:id/status', requireAdmin, async (req,res) => {
-  const db = loadDB();
-  const order = (db.orders || []).find(o => o.id === req.params.id);
-  if(!order) return res.status(404).json({ ok:false, error:'notfound' });
-  order.status = req.body.status || order.status;
-  order.note = req.body.note || order.note || '';
-  order.repliedAt = Date.now();
-  saveDB(db);
-
-  // notify telegram + admins
-  await tgSend(CONFIG.BOT_ORDER_TOKEN, CONFIG.BOT_ORDER_CHAT,
-    `📌 تحديث طلب #${order.id}\nالحالة: ${order.status}\nملاحظة: ${order.note || '-'}`);
-  broadcastToAdmins('order_updated', order);
-
-  res.json({ ok:true, order });
+app.get('/api/profile/:personal', (req,res)=>{
+  const p = findProfileByPersonal(req.params.personal);
+  if(!p) return res.status(404).json({ ok:false, error:'not found' });
+  res.json({ ok:true, profile:p });
 });
 
-// admin summary
-app.get('/api/admin/summary', requireAdmin, (req,res) => {
-  const db = loadDB();
-  const totalUsers = (db.profiles || []).length;
-  const totalBalance = (db.profiles || []).reduce((s,p)=> s + (Number(p.balance||0)), 0);
-  const totalSpent = (db.orders || []).reduce((s,o)=> s + (Number(o.paidAmount||0)), 0);
-  res.json({ ok:true, totalUsers, totalBalance, totalSpent });
+// profile edit request -> send message to admin bot, save mapping
+app.post('/api/profile/request-edit', async (req,res)=>{
+  const { personal } = req.body;
+  if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
+  const prof = ensureProfile(personal);
+  const text = `طلب تعديل بيانات المستخدم:\nالاسم: ${prof.name || 'غير معروف'}\nالرقم الشخصي: ${prof.personalNumber}\n(اكتب "تم" كرد هنا للموافقة على التعديل لمرة واحدة)`;
+  try{
+    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_LOGIN_REPORT_TOKEN}/sendMessage`, {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_LOGIN_REPORT_CHAT, text })
+    });
+    const data = await r.json().catch(()=>null);
+    console.log('profile request-edit telegram result:', data);
+    if(data && data.ok && data.result && data.result.message_id){
+      DB.profileEditRequests[String(data.result.message_id)] = String(prof.personalNumber);
+      saveData(DB);
+      return res.json({ ok:true, msgId: data.result.message_id });
+    }
+  }catch(e){ console.warn('profile request send error', e); }
+  return res.json({ ok:false });
 });
 
-// admin logins
-app.get('/api/admin/logins', requireAdmin, (req,res) => {
-  const db = loadDB();
-  const list = (db.profiles || []).map(p => ({ name: p.name, personalNumber: p.personalNumber, lastLogin: p.lastLogin || null }));
-  res.json({ ok:true, logins: list });
+// submit profile edit (one-time)
+app.post('/api/profile/submit-edit', (req,res)=>{
+  const { personal, name, email, phone, password } = req.body;
+  if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
+  const prof = findProfileByPersonal(personal);
+  if(!prof) return res.status(404).json({ ok:false, error:'not found' });
+  if(prof.canEdit !== true) return res.status(403).json({ ok:false, error:'edit_not_allowed' });
+
+  if(name) prof.name = name;
+  if(email) prof.email = email;
+  if(phone) prof.phone = phone;
+  if(password) prof.password = password;
+  prof.canEdit = false;
+  saveData(DB);
+
+  return res.json({ ok:true, profile: prof });
 });
 
-// admin SSE stream (use token in query param because EventSource doesn't allow headers)
-app.get('/api/admin/stream', (req,res) => {
-  const token = req.query.token;
-  if(!verifyAdminToken(token)) return res.status(401).send('unauthorized');
-  // setup SSE headers
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*'
-  });
-  res.write('\n');
-  // register
-  if(!sseClients.has(token)) sseClients.set(token, []);
-  sseClients.get(token).push(res);
-  // send a ping/welcome
-  res.write(`event: welcome\n`);
-  res.write(`data: ${JSON.stringify({ msg:'connected', ts: Date.now() })}\n\n`);
+// help ticket
+app.post('/api/help', async (req,res)=>{
+  const { personal, issue, fileLink, desc, name, email, phone } = req.body;
+  const prof = ensureProfile(personal);
+  const text = `مشكلة من المستخدم:\nالاسم: ${name || prof.name || 'غير معروف'}\nالرقم الشخصي: ${personal}\nالهاتف: ${phone || prof.phone || 'لا يوجد'}\nالبريد: ${email || prof.email || 'لا يوجد'}\nالمشكلة: ${issue}\nالوصف: ${desc || ''}\nرابط الملف: ${fileLink || 'لا يوجد'}`;
 
-  reqOnClose(res, ()=> {
-    const arr = sseClients.get(token) || [];
-    const idx = arr.indexOf(res);
-    if(idx !== -1) arr.splice(idx,1);
-    if(arr.length === 0) sseClients.delete(token);
-  });
+  try{
+    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_HELP_TOKEN}/sendMessage`, {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_HELP_CHAT, text })
+    });
+    const data = await r.json().catch(()=>null);
+    console.log('help telegram result:', data);
+    return res.json({ ok:true, telegramResult: data });
+  }catch(e){
+    console.warn('help send error', e);
+    return res.json({ ok:false, error: e.message || String(e) });
+  }
 });
 
-// ---------- Additional convenience endpoints that also broadcast ----------
-app.post('/api/notify', async (req,res) => {
-  const text = req.body.text || req.query.text || 'empty';
-  await tgSend(CONFIG.BOT_NOTIFY_TOKEN, CONFIG.BOT_NOTIFY_CHAT, text);
-  res.json({ ok:true });
-});
-app.post('/api/help', async (req,res) => {
-  const text = `Help: ${req.body.message||req.query.message||'-'} from ${req.body.user||req.query.user||'unknown'}`;
-  await tgSend(CONFIG.BOT_HELP_TOKEN, CONFIG.BOT_HELP_CHAT, text);
-  res.json({ ok:true });
-});
-app.post('/api/offers', async (req,res) => {
-  const title = req.body.title || req.query.title || 'عرض';
-  await tgSend(CONFIG.BOT_OFFERS_TOKEN, CONFIG.BOT_OFFERS_CHAT, `🎁 ${title}`);
-  res.json({ ok:true });
-});
-app.post('/api/balance', async (req,res) => {
-  const db = loadDB();
-  const { personalNumber, amount } = req.body;
-  const user = (db.profiles||[]).find(p=>p.personalNumber===personalNumber);
-  if(!user) return res.json({ ok:false, error:'user not found' });
-  user.balance = (Number(user.balance||0) + Number(amount||0));
-  saveDB(db);
-  await tgSend(CONFIG.BOT_BALANCE_TOKEN, CONFIG.BOT_BALANCE_CHAT,
-    `💰 تحديث رصيد ${user.name} (${personalNumber}): +${amount}\nالرصيد الجديد: ${user.balance}`);
-  broadcastToAdmins('balance_updated', { personalNumber, amount, newBalance: user.balance });
-  res.json({ ok:true, user });
+// create order (supports paidWithBalance server-side)
+app.post('/api/orders', async (req,res)=>{
+  const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount } = req.body;
+  if(!personal || !type || !item) return res.status(400).json({ ok:false, error:'missing fields' });
+  const prof = ensureProfile(personal);
+
+  if(paidWithBalance){
+    const price = Number(paidAmount || 0);
+    if(isNaN(price) || price <= 0) return res.status(400).json({ ok:false, error:'invalid_paid_amount' });
+    if(Number(prof.balance || 0) < price) return res.status(402).json({ ok:false, error:'insufficient_balance' });
+    prof.balance = Number(prof.balance || 0) - price;
+    if(!DB.notifications) DB.notifications = [];
+    DB.notifications.unshift({
+      id: String(Date.now()) + '-charge',
+      personal: String(prof.personalNumber),
+      text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  const orderId = Date.now();
+  const order = {
+    id: orderId,
+    personalNumber: String(personal),
+    phone: phone || prof.phone || '',
+    type, item, idField: idField || '',
+    fileLink: fileLink || '',
+    cashMethod: cashMethod || '',
+    status: 'قيد المراجعة',
+    replied: false,
+    telegramMessageId: null,
+    paidWithBalance: !!paidWithBalance,
+    paidAmount: Number(paidAmount || 0),
+    createdAt: new Date().toISOString()
+  };
+  DB.orders.unshift(order);
+  saveData(DB);
+
+  const text = `طلب شحن جديد:\n\nرقم شخصي: ${order.personalNumber}\nالهاتف: ${order.phone || 'لا يوجد'}\nالنوع: ${order.type}\nالتفاصيل: ${order.item}\nالايدي: ${order.idField || ''}\nطريقة الدفع: ${order.cashMethod || ''}\nرابط الملف: ${order.fileLink || ''}\nمعرف الطلب: ${order.id}`;
+
+  try{
+    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_ORDER_TOKEN}/sendMessage`, {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_ORDER_CHAT, text })
+    });
+    const data = await r.json().catch(()=>null);
+    console.log('order telegram send result:', data);
+    if(data && data.ok && data.result && data.result.message_id){
+      order.telegramMessageId = data.result.message_id;
+      saveData(DB);
+    }
+  }catch(e){ console.warn('send order failed', e); }
+  saveData(DB);
+  return res.json({ ok:true, order });
 });
 
-// ---------- start ----------
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-  console.log(`- App: /app`);
-  console.log(`- Admin UI: /admin`);
-  console.log(`- Admin SSE: /api/admin/stream?token=...`);
+// charge (طلب شحن رصيد)
+app.post('/api/charge', async (req,res)=>{
+  const { personal, phone, amount, method, fileLink } = req.body;
+  if(!personal || !amount) return res.status(400).json({ ok:false, error:'missing fields' });
+  const prof = ensureProfile(personal);
+  const chargeId = Date.now();
+  const charge = {
+    id: chargeId,
+    personalNumber: String(personal),
+    phone: phone || prof.phone || '',
+    amount, method, fileLink: fileLink || '',
+    status: 'قيد المراجعة',
+    telegramMessageId: null,
+    createdAt: new Date().toISOString()
+  };
+  DB.charges.unshift(charge);
+  saveData(DB);
+
+  const text = `طلب شحن رصيد:\n\nرقم شخصي: ${personal}\nالهاتف: ${charge.phone || 'لا يوجد'}\nالمبلغ: ${amount}\nطريقة الدفع: ${method}\nرابط الملف: ${fileLink || ''}\nمعرف الطلب: ${chargeId}`;
+
+  try{
+    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_BALANCE_TOKEN}/sendMessage`, {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_BALANCE_CHAT, text })
+    });
+    const data = await r.json().catch(()=>null);
+    console.log('charge telegram send result:', data);
+    if(data && data.ok && data.result && data.result.message_id){
+      charge.telegramMessageId = data.result.message_id;
+      saveData(DB);
+    }
+  }catch(e){ console.warn('send charge failed', e); }
+  return res.json({ ok:true, charge });
+});
+
+// offer ack
+app.post('/api/offer/ack', async (req,res)=>{
+  const { personal, offerId } = req.body;
+  if(!personal || !offerId) return res.status(400).json({ ok:false, error:'missing' });
+  const prof = ensureProfile(personal);
+  const offer = DB.offers.find(o=>String(o.id)===String(offerId));
+  const text = `لقد حصل على العرض او الهدية\nالرقم الشخصي: ${personal}\nالبريد: ${prof.email||'لا يوجد'}\nالهاتف: ${prof.phone||'لا يوجد'}\nالعرض: ${offer ? offer.text : 'غير معروف'}`;
+  try{
+    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_OFFERS_TOKEN}/sendMessage`, {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_OFFERS_CHAT, text })
+    });
+    const data = await r.json().catch(()=>null);
+    console.log('offer ack telegram result:', data);
+    return res.json({ ok:true });
+  }catch(e){
+    return res.json({ ok:false, error: String(e) });
+  }
+});
+
+// notifications endpoint
+app.get('/api/notifications/:personal', (req,res)=>{
+  const personal = req.params.personal;
+  const prof = findProfileByPersonal(personal);
+  if(!prof) return res.json({ ok:false, error:'not found' });
+  const is7 = String(personal).length === 7;
+  const visibleOffers = is7 ? DB.offers : [];
+  const userOrders = DB.orders.filter(o => String(o.personalNumber)===String(personal));
+  const userCharges = DB.charges.filter(c => String(c.personalNumber)===String(personal));
+  const userNotifications = (DB.notifications || []).filter(n => String(n.personal) === String(personal));
+  return res.json({ ok:true, profile:prof, offers: visibleOffers, orders:userOrders, charges:userCharges, notifications: userNotifications, canEdit: !!prof.canEdit });
+});
+
+// mark-read: supports body { personal } OR param /:personal
+app.post('/api/notifications/mark-read/:personal?', (req, res) => {
+  const personal = req.body && req.body.personal ? String(req.body.personal) : (req.params.personal ? String(req.params.personal) : null);
+  if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
+
+  if(!DB.notifications) DB.notifications = [];
+  DB.notifications.forEach(n => { if(String(n.personal) === String(personal)) n.read = true; });
+
+  // also clear replied flags so badge calculation reflects read
+  if(Array.isArray(DB.orders)){
+    DB.orders.forEach(o => {
+      if(String(o.personalNumber) === String(personal) && o.replied) {
+        o.replied = false;
+      }
+    });
+  }
+  if(Array.isArray(DB.charges)){
+    DB.charges.forEach(c => {
+      if(String(c.personalNumber) === String(personal) && c.replied) {
+        c.replied = false;
+      }
+    });
+  }
+
+  saveData(DB);
+  return res.json({ ok:true });
+});
+
+// clear notifications
+app.post('/api/notifications/clear', (req,res)=>{
+  const { personal } = req.body || {};
+  if(!personal) return res.status(400).json({ ok:false, error:'missing personal' });
+  if(!DB.notifications) DB.notifications = [];
+  DB.notifications = DB.notifications.filter(n => String(n.personal) !== String(personal));
+  saveData(DB);
+  return res.json({ ok:true });
+});
+
+// poll/getUpdates logic
+async function pollTelegramForBot(botToken, handler){
+  try{
+    const last = DB.tgOffsets[botToken] || 0;
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=${last+1}&timeout=2`);
+    const data = await res.json().catch(()=>null);
+    if(!data || !data.ok) return;
+    const updates = data.result || [];
+    for(const u of updates){
+      DB.tgOffsets[botToken] = u.update_id;
+      try{ await handler(u); }catch(e){ console.warn('handler error', e); }
+    }
+    saveData(DB);
+  }catch(e){ console.warn('pollTelegramForBot err', e); }
+}
+
+async function adminCmdHandler(update){
+  if(!update.message || !update.message.text) return;
+  const text = String(update.message.text || '').trim();
+  if(/^حظر/i.test(text)){
+    const m = text.match(/الرقم الشخصي[:\s]*([0-9]+)/i);
+    if(m){ const num = m[1]; if(!DB.blocked.includes(String(num))){ DB.blocked.push(String(num)); saveData(DB); } }
+    return;
+  }
+  if(/^الغاء الحظر/i.test(text) || /^إلغاء الحظر/i.test(text)){
+    const m = text.match(/الرقم الشخصي[:\s]*([0-9]+)/i);
+    if(m){ const num = m[1]; DB.blocked = DB.blocked.filter(x => x !== String(num)); saveData(DB); }
+    return;
+  }
+}
+
+async function genericBotReplyHandler(update){
+  if(!update.message) return;
+  const msg = update.message;
+  const text = String(msg.text || '').trim();
+
+  if(msg.reply_to_message && msg.reply_to_message.message_id){
+    const repliedId = msg.reply_to_message.message_id;
+
+    // orders replies
+    const ord = DB.orders.find(o => o.telegramMessageId && Number(o.telegramMessageId) === Number(repliedId));
+    if(ord){
+      const low = text.toLowerCase();
+      if(/^(تم|مقبول|accept)/i.test(low)){
+        ord.status = 'تم قبول طلبك'; ord.replied = true; saveData(DB);
+      } else if(/^(رفض|مرفوض|reject)/i.test(low)){
+        ord.status = 'تم رفض طلبك'; ord.replied = true; saveData(DB);
+      } else { ord.status = text; ord.replied = true; saveData(DB); }
+
+      // notify user
+      if(!DB.notifications) DB.notifications = [];
+      DB.notifications.unshift({
+        id: String(Date.now()) + '-order',
+        personal: String(ord.personalNumber),
+        text: `تحديث حالة الطلب #${ord.id}: ${ord.status}`,
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+      saveData(DB);
+      return;
+    }
+
+    // charges replies
+    const ch = DB.charges.find(c => c.telegramMessageId && Number(c.telegramMessageId) === Number(repliedId));
+    if(ch){
+      const m = text.match(/الرصيد[:\s]*([0-9]+)/i);
+      const mPersonal = text.match(/الرقم الشخصي[:\s\-\(\)]*([0-9]+)/i);
+      if(m && mPersonal){
+        const amount = Number(m[1]);
+        const personal = String(mPersonal[1]);
+        const prof = findProfileByPersonal(personal);
+        if(prof){
+          prof.balance = (prof.balance || 0) + amount;
+          ch.status = 'تم تحويل الرصيد';
+          ch.replied = true;
+          saveData(DB);
+          if(!DB.notifications) DB.notifications = [];
+          DB.notifications.unshift({
+            id: String(Date.now()) + '-balance',
+            personal: String(prof.personalNumber),
+            text: `تم شحن رصيدك بمبلغ ${amount.toLocaleString('en-US')} ل.س. رصيدك الآن: ${(prof.balance||0).toLocaleString('en-US')} ل.س`,
+            read: false,
+            createdAt: new Date().toISOString()
+          });
+          saveData(DB);
+        }
+      } else {
+        if(/^(تم|مقبول|accept)/i.test(text)) { ch.status = 'تم شحن الرصيد'; ch.replied = true; saveData(DB); }
+        else if(/^(رفض|مرفوض|reject)/i.test(text)) { ch.status = 'تم رفض الطلب'; ch.replied = true; saveData(DB); }
+        else { ch.status = text; ch.replied = true; saveData(DB); }
+
+        const prof = findProfileByPersonal(ch.personalNumber);
+        if(prof){
+          if(!DB.notifications) DB.notifications = [];
+          DB.notifications.unshift({
+            id: String(Date.now()) + '-charge-status',
+            personal: String(prof.personalNumber),
+            text: `تحديث حالة شحن الرصيد #${ch.id}: ${ch.status}`,
+            read: false,
+            createdAt: new Date().toISOString()
+          });
+          saveData(DB);
+        }
+      }
+      return;
+    }
+
+    // profile edit reply mapping
+    if(DB.profileEditRequests && DB.profileEditRequests[String(repliedId)]){
+      const personal = DB.profileEditRequests[String(repliedId)];
+      if(/^تم$/i.test(text.trim())){
+        const p = findProfileByPersonal(personal);
+        if(p){
+          p.canEdit = true;
+          if(!DB.notifications) DB.notifications = [];
+          DB.notifications.unshift({
+            id: String(Date.now()) + '-edit',
+            personal: String(p.personalNumber),
+            text: 'تم قبول طلبك بتعديل معلوماتك الشخصية. تحقق من ذلك في ملفك الشخصي.',
+            read: false,
+            createdAt: new Date().toISOString()
+          });
+          saveData(DB);
+        }
+        delete DB.profileEditRequests[String(repliedId)];
+        saveData(DB);
+        return;
+      } else {
+        delete DB.profileEditRequests[String(repliedId)];
+        saveData(DB);
+        return;
+      }
+    }
+  }
+
+  // direct notification by personal number in plain message (admin writes message containing "الرقم الشخصي: <digits>")
+  try{
+    const mPersonal = text.match(/الرقم\s*الشخصي[:\s\-\(\)]*([0-9]+)/i);
+    if(mPersonal){
+      const personal = String(mPersonal[1]);
+      const cleanedText = text.replace(mPersonal[0], '').trim();
+      if(!DB.notifications) DB.notifications = [];
+      DB.notifications.unshift({
+        id: String(Date.now()) + '-direct',
+        personal: personal,
+        text: cleanedText || text,
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+      saveData(DB);
+      return;
+    }
+  }catch(e){ console.warn('personal direct notify parse error', e); }
+
+  // offers
+  if(/^عرض|^هدية/i.test(text)){
+    const offerId = Date.now(); DB.offers.unshift({ id: offerId, text, createdAt: new Date().toISOString() }); saveData(DB);
+  }
+}
+
+// poll wrapper
+async function pollAllBots(){
+  try{
+    // admin commands
+    if(CFG.BOT_ADMIN_CMD_TOKEN) await pollTelegramForBot(CFG.BOT_ADMIN_CMD_TOKEN, adminCmdHandler);
+    // order/balance/help/offers/login
+    if(CFG.BOT_ORDER_TOKEN) await pollTelegramForBot(CFG.BOT_ORDER_TOKEN, genericBotReplyHandler);
+    if(CFG.BOT_BALANCE_TOKEN) await pollTelegramForBot(CFG.BOT_BALANCE_TOKEN, genericBotReplyHandler);
+    if(CFG.BOT_LOGIN_REPORT_TOKEN) await pollTelegramForBot(CFG.BOT_LOGIN_REPORT_TOKEN, genericBotReplyHandler);
+    if(CFG.BOT_HELP_TOKEN) await pollTelegramForBot(CFG.BOT_HELP_TOKEN, genericBotReplyHandler);
+    if(CFG.BOT_OFFERS_TOKEN) await pollTelegramForBot(CFG.BOT_OFFERS_TOKEN, genericBotReplyHandler);
+    // notify bot (direct admin notifications)
+    if(CFG.BOT_NOTIFY_TOKEN) await pollTelegramForBot(CFG.BOT_NOTIFY_TOKEN, genericBotReplyHandler);
+  }catch(e){ console.warn('pollAllBots error', e); }
+}
+
+setInterval(pollAllBots, 2500);
+
+// debug endpoints
+app.get('/api/debug/db', (req,res)=> res.json({ ok:true, size: { profiles: DB.profiles.length, orders: DB.orders.length, charges: DB.charges.length, offers: DB.offers.length, notifications: (DB.notifications||[]).length }, tgOffsets: DB.tgOffsets || {} }));
+app.post('/api/debug/clear-updates', (req,res)=>{ DB.tgOffsets = {}; saveData(DB); res.json({ok:true}); });
+
+app.listen(PORT, ()=> {
+  console.log(`Server listening on ${PORT}`);
+  DB = loadData();
+  console.log('DB loaded items:', DB.profiles.length, 'profiles');
 });
