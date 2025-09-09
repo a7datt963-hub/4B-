@@ -78,9 +78,8 @@ function ensureProfile(personal){
     p = { personalNumber: String(personal), name: 'ضيف', email:'', phone:'', password:'', balance: 0, canEdit:false };
     DB.profiles.push(p); saveData(DB);
   } else {
-    if (typeof p.balance !== 'number') {
-  p.balance = 0; // يتنفذ بس أول مرة إذا ما في رصيد نهائيًا
-    }
+    if(typeof p.balance === 'undefined') p.balance = 0;
+  }
   return p;
 }
 
@@ -131,7 +130,7 @@ app.post('/api/register', async (req,res)=>{
   if(!personalNumber) return res.status(400).json({ ok:false, error:'missing personalNumber' });
   let p = findProfileByPersonal(personalNumber);
   if(!p){
-    p = { personalNumber: String(personalNumber), name:name||'غير معروف', email:email||'', password:password||'', phone:phone||'', canEdit:false };
+    p = { personalNumber: String(personalNumber), name:name||'غير معروف', email:email||'', password:password||'', phone:phone||'', balance:0, canEdit:false };
     DB.profiles.push(p);
   } else {
     p.name = name || p.name;
