@@ -13,7 +13,16 @@ const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.use(cors());
+const corsOptions = {
+  origin: [
+    "https://visionary-platypus-8d92c4.netlify.app/", // غيّرها لعنوان موقعك على Netlify
+    "http://localhost:3000"          // عشان يشتغل محلياً
+  ],
+  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
+};
+
+app.use(cors(corsOptions));
 
 const CFG = {
   BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || "",
