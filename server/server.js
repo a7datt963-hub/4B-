@@ -13,7 +13,7 @@ const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.use(cors({ origin: "*" }));
+app.use(cors());
 
 const CFG = {
   BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || "",
