@@ -13,7 +13,7 @@ const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.use(cors());
+app.use(cors({ origin: "*" }));
 
 const CFG = {
   BOT_ORDER_TOKEN: process.env.BOT_ORDER_TOKEN || "",
@@ -245,63 +245,90 @@ app.post('/api/help', async (req,res)=>{
     return res.json({ ok:false, error: e.message || String(e) });
   }
 });
+// ====== atomic / safe orders handler with simple mutex ======
+const ordersMutex = { _locked:false, async acquire(){ 
+  return new Promise(resolve => {
+    const tryAcquire = () => {
+      if(!this._locked){ this._locked = true; resolve(); }
+      else setTimeout(tryAcquire, 8);
+    };
+    tryAcquire();
+  });
+}, release(){ this._locked = false; } };
 
-// create order (supports paidWithBalance server-side)
 app.post('/api/orders', async (req,res)=>{
   const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount } = req.body;
   if(!personal || !type || !item) return res.status(400).json({ ok:false, error:'missing fields' });
-  const prof = ensureProfile(personal);
 
-  if(paidWithBalance){
-    const price = Number(paidAmount || 0);
-    if(isNaN(price) || price <= 0) return res.status(400).json({ ok:false, error:'invalid_paid_amount' });
-    if(Number(prof.balance || 0) < price) return res.status(402).json({ ok:false, error:'insufficient_balance' });
-    prof.balance = Number(prof.balance || 0) - price;
-    if(!DB.notifications) DB.notifications = [];
-    DB.notifications.unshift({
-      id: String(Date.now()) + '-charge',
-      personal: String(prof.personalNumber),
-      text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
-      read: false,
-      createdAt: new Date().toISOString()
-    });
-  }
-
-  const orderId = Date.now();
-  const order = {
-    id: orderId,
-    personalNumber: String(personal),
-    phone: phone || prof.phone || '',
-    type, item, idField: idField || '',
-    fileLink: fileLink || '',
-    cashMethod: cashMethod || '',
-    status: 'قيد المراجعة',
-    replied: false,
-    telegramMessageId: null,
-    paidWithBalance: !!paidWithBalance,
-    paidAmount: Number(paidAmount || 0),
-    createdAt: new Date().toISOString()
-  };
-  DB.orders.unshift(order);
-  saveData(DB);
-
-  const text = `طلب شحن جديد:\n\nرقم شخصي: ${order.personalNumber}\nالهاتف: ${order.phone || 'لا يوجد'}\nالنوع: ${order.type}\nالتفاصيل: ${order.item}\nالايدي: ${order.idField || ''}\nطريقة الدفع: ${order.cashMethod || ''}\nرابط الملف: ${order.fileLink || ''}\nمعرف الطلب: ${order.id}`;
-
+  // acquire lock to avoid concurrent balance race
+  await ordersMutex.acquire();
   try{
-    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_ORDER_TOKEN}/sendMessage`, {
-      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_ORDER_CHAT, text })
-    });
-    const data = await r.json().catch(()=>null);
-    console.log('order telegram send result:', data);
-    if(data && data.ok && data.result && data.result.message_id){
-      order.telegramMessageId = data.result.message_id;
-      saveData(DB);
-    }
-  }catch(e){ console.warn('send order failed', e); }
-  saveData(DB);
-  return res.json({ ok:true, order });
-});
+    const prof = ensureProfile(personal); // will create if missing
 
+    // handle paidWithBalance atomically within lock
+    if(paidWithBalance){
+      const price = Number(paidAmount || 0);
+      if(isNaN(price) || price <= 0) {
+        return res.status(400).json({ ok:false, error:'invalid_paid_amount' });
+      }
+      if(Number(prof.balance || 0) < price){
+        return res.status(402).json({ ok:false, error:'insufficient_balance' });
+      }
+
+      // deduct and add a notification
+      prof.balance = Number(prof.balance || 0) - price;
+      if(!DB.notifications) DB.notifications = [];
+      DB.notifications.unshift({
+        id: String(Date.now()) + '-charge',
+        personal: String(prof.personalNumber),
+        text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const orderId = Date.now();
+    const order = {
+      id: orderId,
+      personalNumber: String(personal),
+      phone: phone || prof.phone || '',
+      type, item, idField: idField || '',
+      fileLink: fileLink || '',
+      cashMethod: cashMethod || '',
+      status: 'قيد المراجعة',
+      replied: false,
+      telegramMessageId: null,
+      paidWithBalance: !!paidWithBalance,
+      paidAmount: Number(paidAmount || 0),
+      createdAt: new Date().toISOString()
+    };
+    DB.orders.unshift(order);
+    saveData(DB);
+
+    // send telegram notification (existing logic)
+    (async ()=>{
+      try{
+        const text = `طلب شحن جديد:\n\nرقم شخصي: ${order.personalNumber}\nالهاتف: ${order.phone || 'لا يوجد'}\nالنوع: ${order.type}\nالتفاصيل: ${order.item}\nالايدي: ${order.idField || ''}\nطريقة الدفع: ${order.cashMethod || ''}\nرابط الملف: ${order.fileLink || ''}\nمعرف الطلب: ${order.id}`;
+        const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_ORDER_TOKEN}/sendMessage`, {
+          method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_ORDER_CHAT, text })
+        });
+        const data = await r.json().catch(()=>null);
+        if(data && data.ok && data.result && data.result.message_id){
+          order.telegramMessageId = data.result.message_id;
+          saveData(DB);
+        }
+      }catch(e){ console.warn('send order failed', e); }
+    })();
+
+    // return order + updated profile so client can sync local balance
+    return res.json({ ok:true, order, profile: prof });
+  } catch(e){
+    console.error('orders handler error', e);
+    return res.status(500).json({ ok:false, error: String(e && e.message ? e.message : e) });
+  } finally {
+    ordersMutex.release();
+  }
+});
 // charge (طلب شحن رصيد)
 app.post('/api/charge', async (req,res)=>{
   const { personal, phone, amount, method, fileLink } = req.body;
