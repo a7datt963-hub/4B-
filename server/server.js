@@ -245,19 +245,10 @@ app.post('/api/help', async (req,res)=>{
     return res.json({ ok:false, error: e.message || String(e) });
   }
 });
-// ====== atomic / safe orders handler with simple mutex ======
-const ordersMutex = { _locked:false, async acquire(){ 
-  return new Promise(resolve => {
-    const tryAcquire = () => {
-      if(!this._locked){ this._locked = true; resolve(); }
-      else setTimeout(tryAcquire, 8);
-    };
-    tryAcquire();
-  });
-}, release(){ this._locked = false; } };
 
+// ====== atomic / safe orders handler with idempotency + mutex ======
 app.post('/api/orders', async (req,res)=>{
-  const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount } = req.body;
+  const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount, idempotencyKey } = req.body;
   if(!personal || !type || !item) return res.status(400).json({ ok:false, error:'missing fields' });
 
   // acquire lock to avoid concurrent balance race
@@ -265,28 +256,28 @@ app.post('/api/orders', async (req,res)=>{
   try{
     const prof = ensureProfile(personal); // will create if missing
 
-    // handle paidWithBalance atomically within lock
+    // --- IDEMPOTENCY CHECK ---
+    if(idempotencyKey){
+      const exists = DB.orders.find(o => o.idempotencyKey && String(o.idempotencyKey) === String(idempotencyKey) && String(o.personalNumber) === String(personal));
+      if(exists){
+        // return existing order and fresh profile so client can resync balance
+        return res.json({ ok:true, order: exists, profile: prof, idempotent: true });
+      }
+    }
+
+    // validate paid amount if paying with balance
+    let price = 0;
     if(paidWithBalance){
-      const price = Number(paidAmount || 0);
+      price = Number(paidAmount || 0);
       if(isNaN(price) || price <= 0) {
         return res.status(400).json({ ok:false, error:'invalid_paid_amount' });
       }
       if(Number(prof.balance || 0) < price){
         return res.status(402).json({ ok:false, error:'insufficient_balance' });
       }
-
-      // deduct and add a notification
-      prof.balance = Number(prof.balance || 0) - price;
-      if(!DB.notifications) DB.notifications = [];
-      DB.notifications.unshift({
-        id: String(Date.now()) + '-charge',
-        personal: String(prof.personalNumber),
-        text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
-        read: false,
-        createdAt: new Date().toISOString()
-      });
     }
 
+    // build order object (include idempotencyKey)
     const orderId = Date.now();
     const order = {
       id: orderId,
@@ -300,12 +291,29 @@ app.post('/api/orders', async (req,res)=>{
       telegramMessageId: null,
       paidWithBalance: !!paidWithBalance,
       paidAmount: Number(paidAmount || 0),
+      idempotencyKey: idempotencyKey ? String(idempotencyKey) : null,
       createdAt: new Date().toISOString()
     };
+
+    // 1) احفظ الطلب أولاً
     DB.orders.unshift(order);
     saveData(DB);
 
-    // send telegram notification (existing logic)
+    // 2) الآن خصم الرصيد (بعد تأكيد أن الطلب خُزن)
+    if(paidWithBalance){
+      prof.balance = Number(prof.balance || 0) - price;
+      if(!DB.notifications) DB.notifications = [];
+      DB.notifications.unshift({
+        id: String(Date.now()) + '-charge',
+        personal: String(prof.personalNumber),
+        text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
+        read: false,
+        createdAt: new Date().toISOString()
+      });
+      saveData(DB); // احفظ بعد الخصم أيضاً
+    }
+
+    // send telegram notification asynchronously (do not block response)
     (async ()=>{
       try{
         const text = `طلب شحن جديد:\n\nرقم شخصي: ${order.personalNumber}\nالهاتف: ${order.phone || 'لا يوجد'}\nالنوع: ${order.type}\nالتفاصيل: ${order.item}\nالايدي: ${order.idField || ''}\nطريقة الدفع: ${order.cashMethod || ''}\nرابط الملف: ${order.fileLink || ''}\nمعرف الطلب: ${order.id}`;
@@ -329,6 +337,7 @@ app.post('/api/orders', async (req,res)=>{
     ordersMutex.release();
   }
 });
+
 // charge (طلب شحن رصيد)
 app.post('/api/charge', async (req,res)=>{
   const { personal, phone, amount, method, fileLink } = req.body;
