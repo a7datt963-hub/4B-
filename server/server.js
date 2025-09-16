@@ -246,96 +246,60 @@ app.post('/api/help', async (req,res)=>{
   }
 });
 
-// ====== atomic / safe orders handler with idempotency + mutex ======
+// create order (supports paidWithBalance server-side)
 app.post('/api/orders', async (req,res)=>{
-  const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount, idempotencyKey } = req.body;
+  const { personal, phone, type, item, idField, fileLink, cashMethod, paidWithBalance, paidAmount } = req.body;
   if(!personal || !type || !item) return res.status(400).json({ ok:false, error:'missing fields' });
+  const prof = ensureProfile(personal);
 
-  // acquire lock to avoid concurrent balance race
-  await ordersMutex.acquire();
-  try{
-    const prof = ensureProfile(personal); // will create if missing
-
-    // --- IDEMPOTENCY CHECK ---
-    if(idempotencyKey){
-      const exists = DB.orders.find(o => o.idempotencyKey && String(o.idempotencyKey) === String(idempotencyKey) && String(o.personalNumber) === String(personal));
-      if(exists){
-        // return existing order and fresh profile so client can resync balance
-        return res.json({ ok:true, order: exists, profile: prof, idempotent: true });
-      }
-    }
-
-    // validate paid amount if paying with balance
-    let price = 0;
-    if(paidWithBalance){
-      price = Number(paidAmount || 0);
-      if(isNaN(price) || price <= 0) {
-        return res.status(400).json({ ok:false, error:'invalid_paid_amount' });
-      }
-      if(Number(prof.balance || 0) < price){
-        return res.status(402).json({ ok:false, error:'insufficient_balance' });
-      }
-    }
-
-    // build order object (include idempotencyKey)
-    const orderId = Date.now();
-    const order = {
-      id: orderId,
-      personalNumber: String(personal),
-      phone: phone || prof.phone || '',
-      type, item, idField: idField || '',
-      fileLink: fileLink || '',
-      cashMethod: cashMethod || '',
-      status: 'قيد المراجعة',
-      replied: false,
-      telegramMessageId: null,
-      paidWithBalance: !!paidWithBalance,
-      paidAmount: Number(paidAmount || 0),
-      idempotencyKey: idempotencyKey ? String(idempotencyKey) : null,
+  if(paidWithBalance){
+    const price = Number(paidAmount || 0);
+    if(isNaN(price) || price <= 0) return res.status(400).json({ ok:false, error:'invalid_paid_amount' });
+    if(Number(prof.balance || 0) < price) return res.status(402).json({ ok:false, error:'insufficient_balance' });
+    prof.balance = Number(prof.balance || 0) - price;
+    if(!DB.notifications) DB.notifications = [];
+    DB.notifications.unshift({
+      id: String(Date.now()) + '-charge',
+      personal: String(prof.personalNumber),
+      text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
+      read: false,
       createdAt: new Date().toISOString()
-    };
-
-    // 1) احفظ الطلب أولاً
-    DB.orders.unshift(order);
-    saveData(DB);
-
-    // 2) الآن خصم الرصيد (بعد تأكيد أن الطلب خُزن)
-    if(paidWithBalance){
-      prof.balance = Number(prof.balance || 0) - price;
-      if(!DB.notifications) DB.notifications = [];
-      DB.notifications.unshift({
-        id: String(Date.now()) + '-charge',
-        personal: String(prof.personalNumber),
-        text: `تم خصم ${price.toLocaleString('en-US')} ل.س من رصيدك لطلب: ${item}`,
-        read: false,
-        createdAt: new Date().toISOString()
-      });
-      saveData(DB); // احفظ بعد الخصم أيضاً
-    }
-
-    // send telegram notification asynchronously (do not block response)
-    (async ()=>{
-      try{
-        const text = `طلب شحن جديد:\n\nرقم شخصي: ${order.personalNumber}\nالهاتف: ${order.phone || 'لا يوجد'}\nالنوع: ${order.type}\nالتفاصيل: ${order.item}\nالايدي: ${order.idField || ''}\nطريقة الدفع: ${order.cashMethod || ''}\nرابط الملف: ${order.fileLink || ''}\nمعرف الطلب: ${order.id}`;
-        const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_ORDER_TOKEN}/sendMessage`, {
-          method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_ORDER_CHAT, text })
-        });
-        const data = await r.json().catch(()=>null);
-        if(data && data.ok && data.result && data.result.message_id){
-          order.telegramMessageId = data.result.message_id;
-          saveData(DB);
-        }
-      }catch(e){ console.warn('send order failed', e); }
-    })();
-
-    // return order + updated profile so client can sync local balance
-    return res.json({ ok:true, order, profile: prof });
-  } catch(e){
-    console.error('orders handler error', e);
-    return res.status(500).json({ ok:false, error: String(e && e.message ? e.message : e) });
-  } finally {
-    ordersMutex.release();
+    });
   }
+
+  const orderId = Date.now();
+  const order = {
+    id: orderId,
+    personalNumber: String(personal),
+    phone: phone || prof.phone || '',
+    type, item, idField: idField || '',
+    fileLink: fileLink || '',
+    cashMethod: cashMethod || '',
+    status: 'قيد المراجعة',
+    replied: false,
+    telegramMessageId: null,
+    paidWithBalance: !!paidWithBalance,
+    paidAmount: Number(paidAmount || 0),
+    createdAt: new Date().toISOString()
+  };
+  DB.orders.unshift(order);
+  saveData(DB);
+
+  const text = `طلب شحن جديد:\n\nرقم شخصي: ${order.personalNumber}\nالهاتف: ${order.phone || 'لا يوجد'}\nالنوع: ${order.type}\nالتفاصيل: ${order.item}\nالايدي: ${order.idField || ''}\nطريقة الدفع: ${order.cashMethod || ''}\nرابط الملف: ${order.fileLink || ''}\nمعرف الطلب: ${order.id}`;
+
+  try{
+    const r = await fetch(`https://api.telegram.org/bot${CFG.BOT_ORDER_TOKEN}/sendMessage`, {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ chat_id: CFG.BOT_ORDER_CHAT, text })
+    });
+    const data = await r.json().catch(()=>null);
+    console.log('order telegram send result:', data);
+    if(data && data.ok && data.result && data.result.message_id){
+      order.telegramMessageId = data.result.message_id;
+      saveData(DB);
+    }
+  }catch(e){ console.warn('send order failed', e); }
+  saveData(DB);
+  return res.json({ ok:true, order });
 });
 
 // charge (طلب شحن رصيد)
