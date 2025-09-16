@@ -299,7 +299,7 @@ app.post('/api/orders', async (req,res)=>{
     }
   }catch(e){ console.warn('send order failed', e); }
   saveData(DB);
-  return res.json({ ok:true, order });
+  return res.json({ ok: true, order: order, profile: prof });
 });
 
 // charge (طلب شحن رصيد)
